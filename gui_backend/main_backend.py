@@ -1,0 +1,19 @@
+"""The main window wrapper that holds everything."""
+from gui.main_window import start_application, MainWindow
+from gui_backend.sub_backend.data_handler import VisualizationWrapper
+
+
+class MainWindowBackend:
+    """Wrapper around the window, to handle data."""
+
+    def __init__(self) -> None:
+        """Initialize the wrapper around the window object for pyqt."""
+        # lookup table for classification colors
+        self.app = start_application()
+        self.runner = None
+        self.window = MainWindow()
+        self.window.showMaximized()
+        self.circuit_initialized = False
+        self.bloch_backend = VisualizationWrapper(self.window)
+
+        
