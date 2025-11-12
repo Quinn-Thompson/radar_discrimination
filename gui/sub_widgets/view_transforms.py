@@ -9,7 +9,6 @@ from gui.helpers import hover_color, clicked_color
 from typing import Generator
 
 class GraphTypes(Enum):
-    plot_1d = "1D Plot"
     plot_2d = "2D Plot"
     colormesh = "Color Mesh"
 
@@ -21,7 +20,7 @@ class ViewTransformsWidgets():
         """Initialize each widget within the window.
         """
 
-        self.figure = Figure(figsize=(14, 8))
+        self.figure = Figure(figsize=(14, 8), constrained_layout=True, edgecolor='white')
         self.graph_widgets: FigureCanvas = FigureCanvas(self.figure)
         self.method_dropdown = QtWidgets.QComboBox()
         self.graph_type = QtWidgets.QComboBox()
@@ -90,27 +89,27 @@ class ViewTransforms(QtWidgets.QFrame):
 
         self.graph_layout.addWidget(
             self.widgets.graph_type,
-            1, 
-            1,
+            0, 
+            0,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
         
         self.method_layout.addWidget(
             self.widgets.method_dropdown,
             0, 
-            1,
-            alignment=QtCore.Qt.AlignmentFlag.AlignCenter
-        )
-        self.method_layout.addWidget(
-            self.widgets.refresh,
-            2, 
             0,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
         self.method_layout.addWidget(
-            self.widgets.run_transforms,
-            2, 
+            self.widgets.refresh,
+            0, 
             1,
+            alignment=QtCore.Qt.AlignmentFlag.AlignCenter
+        )
+        self.method_layout.addWidget(
+            self.widgets.run_transforms,
+            0, 
+            2,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
 

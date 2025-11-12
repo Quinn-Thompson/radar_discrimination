@@ -29,9 +29,15 @@ class CaptureBackend:
         self.sub_window = sub_window
         self.sub_window.widgets.figure.patch.set_facecolor(background_color)
         for receiver in range(1, _RECEIVER_COUNT+1):
-            self.figure_layout.append(sub_window.widgets.figure.add_subplot(1, receiver, 1))
+
+            self.figure_layout.append(sub_window.widgets.figure.add_subplot(1, _RECEIVER_COUNT, receiver))
+            for spine in self.figure_layout[receiver-1].spines.values():
+                spine.set_edgecolor('white')   # color of border lines
+                spine.set_linewidth(2) 
             self.figure_layout[receiver-1].patch.set_facecolor(background_color)
             self.figure_layout[receiver-1].set_title(f"Receiver {receiver}", fontsize=10, pad=24, color="white")
+            self.figure_layout[receiver-1].tick_params(axis='x', colors='white')
+            self.figure_layout[receiver-1].tick_params(axis='y', colors='white')
         sub_window.widgets.capture_button_frames.clicked.connect(self.capture_x_frames)
         sub_window.widgets.capture_button_time.clicked.connect(self.capture_for_x_time)
         sub_window.widgets.save_button.clicked.connect(self.find_location_to_save)

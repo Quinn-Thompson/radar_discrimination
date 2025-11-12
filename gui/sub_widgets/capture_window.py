@@ -11,7 +11,7 @@ class CaptureWindowWidgets():
     def __init__(self) -> None:
         """Initialize each widget within the window.
         """
-        self.figure = Figure(figsize=(14, 8))
+        self.figure = Figure(figsize=(14, 8), constrained_layout=True, edgecolor='white')
         self.graph_widgets: FigureCanvas = FigureCanvas(self.figure)
         self.capture_button_time = QtWidgets.QPushButton()
         self.capture_button_frames = QtWidgets.QPushButton()

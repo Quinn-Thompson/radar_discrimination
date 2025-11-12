@@ -18,3 +18,6 @@ def apply_fft(frame: NDArray[np.float64]):
 
 def log10(frame: NDArray[np.float64]):
     return 10 * np.log10(np.abs(frame)) 
+
+def face(frame: NDArray[np.float64]):
+    return frame
