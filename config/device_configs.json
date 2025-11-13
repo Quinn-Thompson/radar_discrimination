@@ -1,5 +1,5 @@
 {
-    "frame_repetition_time_s":307.325e-3, 
+    "frame_repetition_time_s":100.325e-3, 
     "chirp_repetition_time_s":500e-6, 
     "num_chirps":16,  
     "tdm_mimo":false,  

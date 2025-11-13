@@ -2,9 +2,10 @@
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
 from gui.helpers import global_budget_window_style
-from gui.sub_widgets.view_transforms import ViewTransforms
+from gui.sub_widgets.view_captured import ViewCaptured
 from gui.sub_widgets.render_window import RenderWindowControl
 from gui.sub_widgets.capture_window import CaptureWindow
+from gui.sub_widgets.signal_window import ActionWindow, SignalWindow
 
 from dataclasses import dataclass
 
@@ -15,9 +16,10 @@ def start_application() -> QtWidgets.QApplication:
 @dataclass
 class SubWidgets():
     """The different windows that exist within the main one."""
-    data_display: ViewTransforms
     render_control: RenderWindowControl
     capture_window: CaptureWindow
+    signal_window: SignalWindow
+    view_captured: ViewCaptured
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -32,7 +34,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setStyleSheet(global_budget_window_style)
         render_window = RenderWindowControl()
         self.sub_window_widgets: SubWidgets = SubWidgets(
-            ViewTransforms(render_window), render_window, CaptureWindow()
+            render_window, CaptureWindow(), SignalWindow(), ViewCaptured(render_window)
         )
 
         # add the main widget to the root
@@ -47,8 +49,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.root_layoutV = QtWidgets.QVBoxLayout()
         
         self.tabs = QtWidgets.QTabWidget()
-        self.tabs.addTab(self.sub_window_widgets.data_display, "Data Display")
+        self.tabs.addTab(self.sub_window_widgets.view_captured, "View Captured Data")
         self.tabs.addTab(self.sub_window_widgets.capture_window, "Capture Window")
+        self.tabs.addTab(self.sub_window_widgets.signal_window, "Signal Window")
         self.timeout_label = QtWidgets.QLabel()
         self.timeout_label.setText("Active")
         self.status_bar = QtWidgets.QToolBar()
