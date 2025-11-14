@@ -1,6 +1,7 @@
 
 from gui.sub_widgets.view_captured import ViewCaptured
 from gui_backend.sub_backend.view_transforms import ViewTransformsBackend
+from gui_backend.pull_data import DataHandler
 from gui.main_window import MainWindow
 from PyQt6.QtWidgets import QFileDialog
 import os
@@ -9,7 +10,7 @@ import numpy as np
 class ViewCapturedBackend:
     """Visualize the transforms provided from methods in another file."""
     
-    def __init__(self, main_window: MainWindow, sub_window: ViewCaptured):
+    def __init__(self, main_window: MainWindow, sub_window: ViewCaptured, data_handler):
         """Initialize the elements and events for the view transforms window.
         
         Args:
@@ -18,13 +19,14 @@ class ViewCapturedBackend:
         """
         self.main_window = main_window
         self.sub_window = sub_window
+        self.data_handler = data_handler
         self.current_folder = None
         sub_window.widgets.load_button.clicked.connect(self.find_location_to_load)
         self.main_window.sub_window_widgets.render_control.widgets.which_bloch.valueChanged.connect(self.on_slider_change)
         self.main_window.sub_window_widgets.render_control.widgets.next_button.clicked.connect(self.next_plot)
         self.main_window.sub_window_widgets.render_control.widgets.prev_button.clicked.connect(self.prev_plot)
         
-        self.transforms_backend = ViewTransformsBackend(self.main_window, self.sub_window.view_transforms_window)
+        self.transforms_backend = ViewTransformsBackend(self.main_window, self.sub_window.view_transforms_window, self.data_handler)
         self.data_list = []
         self.file_names = []
         

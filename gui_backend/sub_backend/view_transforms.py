@@ -1,5 +1,6 @@
 """View the transforms through arbitrary code execution."""
 from gui.sub_widgets.view_transforms import ViewTransforms, GraphTypes
+from gui_backend.pull_data import DataHandler
 from gui_backend.helpers import _RECEIVER_COUNT
 from pathlib import Path
 import matplotlib
@@ -20,6 +21,7 @@ from matplotlib.image import AxesImage
 from functools import partial
 
 
+
 _METHOD_FOLDER = Path("transformation_methods")
 _METHOD_PATH = _METHOD_FOLDER / "transformations.py"
 
@@ -30,13 +32,14 @@ _MODULE_NAME = "transforms"
 class ViewTransformsBackend:
     """Visualize the transforms provided from methods in another file."""
     
-    def __init__(self, main_window: MainWindow, sub_window: ViewTransforms):
+    def __init__(self, main_window: MainWindow, sub_window: ViewTransforms, data_handler: DataHandler):
         """Initialize the elements and events for the view transforms window.
         
         Args:
             main_window: The main gui window.
             sub_window: The window this backend is supporting.
         """
+        self.data_handler = data_handler
         self.main_window = main_window
         self.sub_window = sub_window
         self.figure_layout: List[Axes] = []
@@ -97,7 +100,7 @@ class ViewTransformsBackend:
                 transformed_data = data
             else:
                 method = getattr(self.module, self.sub_window.widgets.method_dropdown.currentText())   
-                transformed_data = method(data)
+                transformed_data = method(data, self.data_handler.current_sequence_dict)
             return transformed_data
         except Exception as exception:
             traceback_object = exception.__traceback__
@@ -155,11 +158,12 @@ class ViewTransformsBackend:
                 self.subplots[receiver].set_ydata(transformed_data[receiver])
                 self.subplots[receiver].set_clim(boundaries[0], boundaries[1])
             else:
+                
                 self.clear_graph(receiver)
-                self.subplots[receiver].append(self.figure_layout[receiver].plot(
+                self.subplots[receiver] = self.figure_layout[receiver].plot(
                     np.arange(transformed_data.shape[1]), 
                     transformed_data[receiver]
-                ))
+                )
                 self.figure_layout[receiver].set_ylim(boundaries[0], boundaries[1])
                 self.figure_layout[receiver].relim()
                 self.figure_layout[receiver].autoscale(enable=True, axis="x")

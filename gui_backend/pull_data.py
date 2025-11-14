@@ -15,6 +15,7 @@ import numpy as np
 from functools import partial
 from datetime import datetime
 from ctypes import POINTER
+from gui_backend.helpers import ElementSequence
 
 class_registry: Dict[str, ifxStructure] = {
     "FmcwSequenceChirp": FmcwSequenceChirp,
@@ -29,23 +30,23 @@ class TimeStampData():
     time_stamp: float
     data: NDArray[np.float64]
 
-def create_sequence_from_dict(first_action: Dict[str, Any]) -> FmcwSequenceElement:
+def create_sequence_from_dict(first_action: ElementSequence) -> FmcwSequenceElement:
 
     element = FmcwSequenceElement()
 
-    element.type = first_action["type"]
-    if first_action["next_element"] is not None:
-        element.next_element = POINTER(FmcwSequenceElement)(create_sequence_from_dict(first_action["next_element"]))
-    if first_action["type"] == FmcwElementType.IFX_SEQ_CHIRP:
-        element.chirp = FmcwSequenceChirp(**first_action["chirp"])
-    if first_action["type"] == FmcwElementType.IFX_SEQ_DELAY:
-        element.delay = FmcwSequenceDelay(**first_action["delay"])
-    if first_action["type"] == FmcwElementType.IFX_SEQ_LOOP:
-        loop_sequence = POINTER(FmcwSequenceElement)(create_sequence_from_dict(first_action["loop"]["sub_sequence"]))
+    element.type = first_action.type
+    if first_action.next_element is not None:
+        element.next_element = POINTER(FmcwSequenceElement)(create_sequence_from_dict(first_action.next_element))
+    if first_action.type == FmcwElementType.IFX_SEQ_CHIRP:
+        element.chirp = FmcwSequenceChirp(**first_action.chirp.__dict__)
+    if first_action.type == FmcwElementType.IFX_SEQ_DELAY:
+        element.delay = FmcwSequenceDelay(**first_action.delay.__dict__)
+    if first_action.type == FmcwElementType.IFX_SEQ_LOOP:
+        loop_sequence = POINTER(FmcwSequenceElement)(create_sequence_from_dict(first_action.loop.sub_sequence))
         element.loop = FmcwSequenceLoop(
             loop_sequence,
-            first_action["loop"]["num_repetitions"],
-            first_action["loop"]["repetition_time_s"]
+            first_action.loop.num_repetitions,
+            first_action.loop.repetition_time_s
         )
     return element
 
@@ -108,10 +109,12 @@ class DataHandler(QObject):
         self._start_capture_time = None
         self._capture_count = None
         self._previous_redraw_time = 0
+        self.current_sequence_dict = None
 
-    def create_new_config(self, first_element: FmcwSimpleSequenceConfig):
+    def create_new_config(self, first_element: Dict[str, Any]):
         self.fmcw_custom.put(first_element)
         self.fmcw_config_update.set()
+        self.current_sequence_dict = first_element
 
     def capture_for_x_time(self, capture_time: float, location: Path):
         """Inform the callback to capture data from separate process for x seconds.

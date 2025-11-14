@@ -168,27 +168,31 @@ class LoopValues():
     def __init__(self) -> None:
         """Initialize each widget within the window.
         """
-        self.number_of_reps: int = 0
-        self.rep_time: float = 0.0
+        self.sub_sequence = None
+        self.num_repetitions: int = 0
+        self.repetition_time_s: float = 0.0
 
 class ChirpValues():
     def __init__(self) -> None:
         """Initialize each widget within the window.
         """
-        self.start_freq: float = 58.0e9
-        self.end_freq: float = 63.5e9
-        self.samples_per_chirp: int = 64
-        self.sample_rate: int = 2e6
+        self.start_frequency_Hz: float = 58.0e9
+        self.end_frequency_Hz: float = 63.5e9
+        self.sample_rate_Hz: int = 2e6
+        self.num_samples: int = 64
+        self.rx_mask: int = 7
+        self.tx_mask: int = 1
         self.tx_power_level: int = 31
-        self.if_gain: int = 23
-        self.high_pass: int = 80000
-        self.low_pass: int = 500000
+        self.lp_cutoff_Hz: int = 80000
+        self.hp_cutoff_Hz: int = 500000
+        self.if_gain_dB: int = 23
+
 
 class DelayValues():
     def __init__(self) -> None:
         """Initialize each widget within the window.
         """
-        self.time: int = 1000
+        self.time_s: int = 1000
 
 class ContainerLabel(QtWidgets.QWidget):
     def __init__(self, item_window: ItemWindow, label_name: str):

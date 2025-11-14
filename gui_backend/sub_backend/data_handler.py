@@ -26,6 +26,6 @@ class VisualizationWrapper():
         self.timer.start(100)  # check every 100ms
         
         self.main_window = main_window
-        self.view_captured = ViewCapturedBackend(self.main_window, self.main_window.sub_window_widgets.view_captured)
+        self.view_captured = ViewCapturedBackend(self.main_window, self.main_window.sub_window_widgets.view_captured, self.data_handler)
         self.capture = CaptureBackend(self.main_window, self.main_window.sub_window_widgets.capture_window, self.data_handler)
         self.signals = SignalWindowBackend(self.main_window, self.main_window.sub_window_widgets.signal_window, self.data_handler)
