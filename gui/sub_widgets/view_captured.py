@@ -1,13 +1,10 @@
 """The window for displaying the bloch spheres."""
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from gui.sub_widgets.render_window import RenderWindowControl
 from gui.sub_widgets.view_transforms import ViewTransforms
-from matplotlib.figure import Figure
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
-from enum import Enum
 from gui.helpers import WindowWidgets
-from typing import Generator
+
 
 class ViewCapturedWidgets(WindowWidgets):
     """The widgets for the rx transforms.
@@ -17,6 +14,7 @@ class ViewCapturedWidgets(WindowWidgets):
         """
         self.load_button = QtWidgets.QPushButton()
         super().__init__()
+
 
 class ViewCaptured(QtWidgets.QFrame):
     """The frame for displaying the transforms for the rx information.
@@ -29,7 +27,9 @@ class ViewCaptured(QtWidgets.QFrame):
         self.root_layoutH = QtWidgets.QHBoxLayout()
         self.display_layout = QtWidgets.QVBoxLayout()
         self.load_layout = QtWidgets.QHBoxLayout()
+        
         self.view_transforms_window = ViewTransforms()
+        
         self.widgets: ViewCapturedWidgets = ViewCapturedWidgets()
         self.setObjectName("ViewCaptured")
         self.setLayout(self.root_layoutH)

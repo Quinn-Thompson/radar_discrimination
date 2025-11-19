@@ -5,7 +5,7 @@ from gui.helpers import global_budget_window_style
 from gui.sub_widgets.view_captured import ViewCaptured
 from gui.sub_widgets.render_window import RenderWindowControl
 from gui.sub_widgets.capture_window import CaptureWindow
-from gui.sub_widgets.signal_window import ActionWindow, SignalWindow
+from gui.sub_widgets.signal_window import SignalWindow
 
 from dataclasses import dataclass
 
@@ -24,7 +24,6 @@ class SubWidgets():
 
 class MainWindow(QtWidgets.QMainWindow):
     """The main widget for the window."""
-    
     def __init__(self) -> None:
         """The initialization for the main window."""
         super().__init__(parent=None)
@@ -54,6 +53,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.addTab(self.sub_window_widgets.signal_window, "Signal Window")
         self.timeout_label = QtWidgets.QLabel()
         self.timeout_label.setText("Active")
+        
         self.status_bar = QtWidgets.QToolBar()
         self.status_bar.addWidget(self.timeout_label)
 

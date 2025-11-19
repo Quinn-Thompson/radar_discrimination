@@ -8,10 +8,12 @@ from gui_backend.sub_backend.capture_window import CaptureBackend
 from gui_backend.sub_backend.signal_window import SignalWindowBackend
 from gui_backend.pull_data import DataHandler
 from functools import partial
+from PyQt6 import QtCore
 matplotlib.use("TkAgg")
 
-class VisualizationWrapper():
+class VisualizationWrapper(QtCore.QObject):
     """Manage data that goes between each back end."""
+    info_signal = QtCore.pyqtSignal(str)
     
     def __init__(self, main_window: MainWindow) -> None:
         """Initialize the wrapper with info from the main window gui.
@@ -19,8 +21,10 @@ class VisualizationWrapper():
         Args:
             main_window: The main gui window.
         """
-        
+        super().__init__()
         self.data_handler = DataHandler()
+        self.data_handler.info_signal = self.info_signal
+        self.info_signal.connect(lambda text: main_window.timeout_label.setText(text))
         self.timer = QTimer()
         self.timer.timeout.connect(self.data_handler.poll_data_queue)
         self.timer.start(100)  # check every 100ms

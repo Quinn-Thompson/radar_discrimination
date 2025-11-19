@@ -3,8 +3,9 @@ import multiprocessing as mp
 from multiprocessing.synchronize import Event
 from ifxradarsdk.fmcw import DeviceFmcw
 from ifxradarsdk.fmcw.types import FmcwSimpleSequenceConfig, FmcwSequenceChirp, ifxStructure, FmcwSequenceDelay, FmcwSequenceLoop, FmcwSequenceElement, FmcwElementType
+from ifxradarsdk.common.exceptions import ErrorNumSamplesOutOfRange
 from pathlib import Path
-from typing import Dict, Any, Union
+from typing import Dict, Any, Union, List, Optional
 from dataclasses import dataclass
 import json
 from PyQt6.QtCore import QTimer, pyqtSignal, QObject, QMutex
@@ -15,7 +16,9 @@ import numpy as np
 from functools import partial
 from datetime import datetime
 from ctypes import POINTER
-from gui_backend.helpers import ElementSequence
+from gui_backend.helpers import ElementSequence, CreateLine, EventsToHandle
+from enum import Enum
+from gui.main_window import MainWindow 
 
 class_registry: Dict[str, ifxStructure] = {
     "FmcwSequenceChirp": FmcwSequenceChirp,
@@ -30,91 +33,101 @@ class TimeStampData():
     time_stamp: float
     data: NDArray[np.float64]
 
-def create_sequence_from_dict(first_action: ElementSequence) -> FmcwSequenceElement:
-
+def create_sequence_from_object(first_action: ElementSequence) -> FmcwSequenceElement:
     element = FmcwSequenceElement()
-
     element.type = first_action.type
-    if first_action.next_element is not None:
-        element.next_element = POINTER(FmcwSequenceElement)(create_sequence_from_dict(first_action.next_element))
     if first_action.type == FmcwElementType.IFX_SEQ_CHIRP:
         element.chirp = FmcwSequenceChirp(**first_action.chirp.__dict__)
     if first_action.type == FmcwElementType.IFX_SEQ_DELAY:
         element.delay = FmcwSequenceDelay(**first_action.delay.__dict__)
     if first_action.type == FmcwElementType.IFX_SEQ_LOOP:
-        loop_sequence = POINTER(FmcwSequenceElement)(create_sequence_from_dict(first_action.loop.sub_sequence))
+        loop_sequence = POINTER(FmcwSequenceElement)(create_sequence_from_object(first_action.loop.sub_sequence))
         element.loop = FmcwSequenceLoop(
             loop_sequence,
             first_action.loop.num_repetitions,
             first_action.loop.repetition_time_s
         )
+    if first_action.next_element is not None:
+        element.next_element = POINTER(FmcwSequenceElement)(create_sequence_from_object(first_action.next_element))
+
     return element
 
-def gather_data(data_queue: mp.Queue, run_device: Event, fmcw_config: Dict[str, Any], fmcw_custom: mp.Queue, fmcw_config_update: Event) -> None:
-    """Gathers data to report back to the main process."""
-    
-    # unloads the json dicts into object types
-    chirp_class = class_registry[fmcw_config["chirp"]["chirp_type"]]
-    del fmcw_config["chirp"]["chirp_type"]
-    chirp_class_inst = chirp_class(**fmcw_config["chirp"])
-    
-    fmcw_config["chirp"] = chirp_class_inst
-    config = FmcwSimpleSequenceConfig(**fmcw_config)
-    
+def run_device_inner_loop(data_queue: mp.Queue, event_passed: Event, event_queue: mp.Queue, fmcw_custom: mp.Queue) -> None:
+    acquire = False
     with DeviceFmcw() as device:
         device.stop_acquisition()
-        sequence = device.create_simple_sequence(config)
-        device.set_acquisition_sequence(sequence)
-        device.start_acquisition()
         while True:
-            if fmcw_config_update.is_set():
-                device.stop_acquisition()
-                fmcw_config_update.clear()
-                new_sequence = create_sequence_from_dict(fmcw_custom.get())
-                device.set_acquisition_sequence(new_sequence)
-                device.start_acquisition()
-            # loop that runs forever, waiting for an Event to collect data
-            if run_device.is_set():
+
+            if event_passed.is_set():
+                event_passed.clear()
+                event = event_queue.get()
+                if event == EventsToHandle.NEW_SEQUENCE:
+                    device.stop_acquisition()
+                    new_sequence = create_sequence_from_object(fmcw_custom.get())
+                    device.set_acquisition_sequence(new_sequence)
+                elif event == EventsToHandle.STOP_ACQUISITION:
+                    device.stop_acquisition()
+                    acquire = False
+                elif event == EventsToHandle.START_ACQUISITION:
+                    device.start_acquisition()
+                    acquire = True
+                    
+            if acquire:
                 frame_contents = device.get_next_frame()
-                data_queue.put(TimeStampData(time.time(), frame_contents[0]))
+                data_queue.put(TimeStampData(time.time(), frame_contents))
             else:
                 time.sleep(0.1)
-        
 
+def gather_data(data_queue: mp.Queue, event_passed: Event, event_queue: mp.Queue, fmcw_custom: mp.Queue) -> None:
+    """Gathers data to report back to the main process."""
+
+    while True:
+        try:        
+            run_device_inner_loop(data_queue, event_passed, event_queue, fmcw_custom)
+        except BufferError:
+            time.sleep(0.5)
+            
 
 class DataHandler(QObject):
     """Manages taking data from another process."""
     update_matplotlib = pyqtSignal(object)
+    updated_sequence = pyqtSignal(object)
         
     def __init__(self) -> None:
         """Initialize the process for gathering data."""
         super().__init__()
-        with open(_CONFIG_PATH, "r") as config_pointer:
-            loaded_Config = json.load(config_pointer)
         self.data_queue = mp.Queue()
-        self.run_device = mp.Event()
+        self.event_passed = mp.Event()
+        self.event_queue = mp.Queue()
         self.fmcw_custom = mp.Queue()
-        self.fmcw_config_update = mp.Event()
-        self.data_process = mp.Process(target=gather_data, args=(self.data_queue, self.run_device, loaded_Config, self.fmcw_custom, self.fmcw_config_update))
+        self.data_process = mp.Process(target=gather_data, args=(self.data_queue, self.event_passed, self.event_queue, self.fmcw_custom))
         self.data_process.start()
+        
+        self.info_signal = None
         
         self.current_data = None
         self.waiting_for_data = True
         self._sent_once = False
         
-        self.display = True
-        self.run_device.set()
         self.capture = False
         self.callback_function = None
         self._start_capture_time = None
         self._capture_count = None
         self._previous_redraw_time = 0
-        self.current_sequence_dict = None
 
-    def create_new_config(self, first_element: Dict[str, Any]):
+    def stop_acquisition(self) -> None:
+        self.event_queue.put(EventsToHandle.STOP_ACQUISITION)
+        self.event_passed.set()
+
+    def start_acquisition(self) -> None:
+        self.event_queue.put(EventsToHandle.START_ACQUISITION)
+        self.event_passed.set()
+
+    def create_new_config(self, first_element: ElementSequence, chirp_list: List[CreateLine]):
+        self.updated_sequence.emit((first_element, chirp_list))
         self.fmcw_custom.put(first_element)
-        self.fmcw_config_update.set()
-        self.current_sequence_dict = first_element
+        self.event_queue.put(EventsToHandle.NEW_SEQUENCE)
+        self.event_passed.set()
 
     def capture_for_x_time(self, capture_time: float, location: Path):
         """Inform the callback to capture data from separate process for x seconds.
@@ -124,10 +137,9 @@ class DataHandler(QObject):
             location: The location to save the data.
         """
         location.mkdir()
-        if not self.display:
-            self.run_device.set()
         self.capture = True
         self.callback_function = partial(self._handle_x_time_capture, capture_time=capture_time, location=location)
+        self.info_signal.emit(f"Capturing for {capture_time} seconds to {location}")
 
     def capture_for_x_count(self, capture_count: int, location: Path):
         """Inform the callback to capture x frames from separate process.
@@ -137,10 +149,9 @@ class DataHandler(QObject):
             location: The location to save the data.
         """
         location.mkdir()
-        if not self.display:
-            self.run_device.set()
         self.capture = True
         self.callback_function = partial(self._handle_x_count_capture, capture_count=capture_count, location=location)
+        self.info_signal.emit(f"Capturing for {capture_count} frames to {location}")
         
     def _handle_x_time_capture(self, data: TimeStampData, capture_time: float, location: Path):
         """Callback during the polling process to capture data for x time.
@@ -157,8 +168,7 @@ class DataHandler(QObject):
             self._start_capture_time = None
             self.capture = False
             self.callback_function = None
-            if not self.display:
-                self.run_device.clear()
+            self.info_signal.emit("Finished Capture")
             return
             
         np.save(f"{location}/{datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")}", data.data)
@@ -178,8 +188,7 @@ class DataHandler(QObject):
             self._capture_count = None
             self.capture = False
             self.callback_function = None
-            if not self.display:
-                self.run_device.clear()
+            self.info_signal.emit("Finished Capture")
             return
             
         np.save(f"{location}/{datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")}", data.data)
@@ -190,9 +199,9 @@ class DataHandler(QObject):
         count = 0
         while True:
             try:
-                data_value: TimeStampData = self.data_queue.get_nowait()
+                data_value: TimeStampData = self.data_queue.get_nowait() 
                 self.current_data = data_value
-                if not count and self.display and data_value is not None:
+                if not count and data_value is not None:
                     # just throw the data at matplotlib whenever it's done updating
                     if self.waiting_for_data and self._sent_once:
                         self._sent_once = False
@@ -200,9 +209,11 @@ class DataHandler(QObject):
                     if self.waiting_for_data and not self._sent_once:
                         current_time = time.time()
                         if current_time - self._previous_redraw_time > 0.10:
+                            self.waiting_for_data = False
                             self.update_matplotlib.emit(self.current_data)
                             self._sent_once = True
                             self._previous_redraw_time = current_time
+                
                 if self.capture and data_value is not None:
                     self.callback_function(data_value)
 

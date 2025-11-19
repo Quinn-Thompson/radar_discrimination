@@ -1,33 +1,139 @@
 """View the transforms through arbitrary code execution."""
-from gui.sub_widgets.view_transforms import ViewTransforms, GraphTypes
+from gui.sub_widgets.view_transforms import ViewTransforms, AllChirpContainerWindow
+from ifxradarsdk.fmcw.types import FmcwElementType
 from gui_backend.pull_data import DataHandler
-from gui_backend.helpers import _RECEIVER_COUNT
-from pathlib import Path
-import matplotlib
-matplotlib.use("Qt5Agg")
+from gui_backend.helpers import Popup, ElementSequence, CreateLine
+from gui.helpers import ModuleInfo, _NO_METHOD, _TRANSFORM_NAME, _FEATURES_NAME, _FEATURES_INFO
+from PyQt6 import QtWidgets, QtCore
 import importlib
 import inspect
-from matplotlib.axes import Axes
-from typing import List, Union, Optional, Tuple
-from gui.helpers import background_color
+from typing import List, Union, Optional, Dict
 from functools import partial
-import os
 import numpy as np
 import sys
 from numpy.typing import NDArray
 from gui.main_window import MainWindow
-from matplotlib.lines import Line2D
-from matplotlib.image import AxesImage
-from functools import partial
+import traceback
+from types import ModuleType
+import multiprocessing as mp
+from multiprocessing.synchronize import Event
+from dataclasses import dataclass
+from enum import Enum
+from queue import Empty
+import time
 
+@dataclass
+class DataPacket:
+    frame_data: Union[List[NDArray[np.float64]], NDArray[np.float64]]
+    chirp_list: List[CreateLine]
+    tab_to_update: str
 
+@dataclass
+class MethodPacket:
+    module_info: ModuleInfo
+    method_name: str
 
-_METHOD_FOLDER = Path("transformation_methods")
-_METHOD_PATH = _METHOD_FOLDER / "transformations.py"
+@dataclass
+class PassInPacket:
+    data_packet: DataPacket
+    method_packets: List[MethodPacket]
 
-_NO_METHOD = "none"
+@dataclass
+class PassbackPacket:
+    transformed_data: Optional[List[List[NDArray[np.float64]]]]
+    tab_to_update: Optional[str]
+    error: Optional[str] = None
+    end_transmission: bool = False
+    
+class DataEventsToHandle(Enum):
+    NEW_DATA = 0
+    CLEAR_DATA = 1
+    NEW_MODULES = 2
+    END_TRANSMISSION = 3
 
-_MODULE_NAME = "transforms"
+def new_methods(method_packets: List[MethodPacket], modules: Dict[ModuleInfo, ModuleType]):
+    for method_packet in method_packets:
+        if method_packet.module_info.module_name in sys.modules:
+            del sys.modules[method_packet.module_info.module_name]
+
+        # Load module again
+        spec = importlib.util.spec_from_file_location(method_packet.module_info.module_name, str(method_packet.module_info.module_path.resolve()))
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot create spec for {method_packet.module_info.module_path}")
+        modules[method_packet.module_info.module_name] = importlib.util.module_from_spec(spec)
+        sys.modules[method_packet.module_info.module_name] = modules[method_packet.module_info.module_name]
+        spec.loader.exec_module(modules[method_packet.module_info.module_name])
+
+def handle_methods(data: DataPacket, method_packets: List[MethodPacket], modules: Dict[ModuleInfo, ModuleType], data_list: Dict[str, List[List[NDArray[np.float64]]]]) -> List[NDArray[np.float64]]:
+    transformed_data = data.frame_data
+    if data.tab_to_update not in data_list:
+        data_list[data.tab_to_update] = []
+    
+    for method_packet in method_packets:
+        if method_packet.module_info.module_name == _TRANSFORM_NAME:
+            if method_packet.method_name == _NO_METHOD:
+                if not isinstance(data.frame_data, list):
+                    transformed_data = [transformed_data]
+            else:
+                transform_method = getattr(modules[method_packet.module_info.module_name], method_packet.method_name)
+                if not isinstance(data.frame_data, list):
+                    transformed_data = transform_method([transformed_data], data.chirp_list)
+                else:
+                    transformed_data = transform_method(transformed_data, data.chirp_list)
+
+        if method_packet.module_info.module_name == _FEATURES_NAME:
+            if method_packet.method_name != _NO_METHOD:
+                if len(data_list[data.tab_to_update]) > 100:
+                    data_list[data.tab_to_update].pop(0)
+                data_list[data.tab_to_update].append(transformed_data)
+                feature_method = getattr(modules[method_packet.module_info.module_name], method_packet.method_name)
+                transformed_data = feature_method(data_list[data.tab_to_update], data.chirp_list)
+            else:
+                data_list[data.tab_to_update] = [transformed_data]
+
+                
+    return transformed_data
+
+def run_arbitrary_code(
+    event_queue: mp.Queue, pass_in_queue: mp.Queue, new_module_methods: mp.Queue, transformed_data_queue: mp.Queue, empty_queues: Event
+):
+    modules = {}
+    data_list = {}
+    while True:
+        try:
+            try:
+                event = event_queue.get(timeout=0.05)
+                empty_queues.clear()
+                if event == DataEventsToHandle.NEW_DATA:
+                    pass_in_data: PassInPacket = pass_in_queue.get_nowait()
+                    # for method_packet in pass_in_data.method_packets:
+                    #     print(f"tab {pass_in_data.data_packet.tab_to_update}, method {method_packet.method_name}")
+                    
+                    feature_data = handle_methods(pass_in_data.data_packet, pass_in_data.method_packets, modules, data_list)
+                    # for feature_chirp in feature_data:
+                    #     print(f"data shape {feature_chirp.shape}")
+                    transformed_data_queue.put(PassbackPacket(feature_data, pass_in_data.data_packet.tab_to_update))
+                elif event == DataEventsToHandle.NEW_MODULES:
+                    method_packets = new_module_methods.get_nowait()
+                    new_methods(method_packets, modules)
+                    
+                elif event == DataEventsToHandle.CLEAR_DATA:
+                    data_list = {}
+                elif event == DataEventsToHandle.END_TRANSMISSION:
+                    transformed_data_queue.put(PassbackPacket(None, None, end_transmission=True))
+            except Empty:
+                empty_queues.set()
+                pass
+        except Exception as exception:
+            traceback_object = exception.__traceback__
+            pop_up_string = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+            while traceback_object.tb_next:
+                traceback_object = traceback_object.tb_next
+            line_number = traceback_object.tb_lineno
+            file_name = traceback_object.tb_frame.f_code.co_filename
+
+            transformed_data_queue.put(PassbackPacket(None, None, pop_up_string))
+
 
 class ViewTransformsBackend:
     """Visualize the transforms provided from methods in another file."""
@@ -42,157 +148,187 @@ class ViewTransformsBackend:
         self.data_handler = data_handler
         self.main_window = main_window
         self.sub_window = sub_window
-        self.figure_layout: List[Axes] = []
-        self.sub_window.widgets.figure.patch.set_facecolor(background_color)
-        # thickness
-        for receiver in range(1, _RECEIVER_COUNT+1):
+        self.sub_window.seperate_viewer_tabs.added_new_tab.connect(lambda new_tab: self.connect_widgets(new_tab))
 
-            self.figure_layout.append(sub_window.widgets.figure.add_subplot(1, _RECEIVER_COUNT, receiver))
-            for spine in self.figure_layout[receiver-1].spines.values():
-                spine.set_edgecolor('white')   # color of border lines
-                spine.set_linewidth(2) 
-            self.figure_layout[receiver-1].patch.set_facecolor(background_color)
-            self.figure_layout[receiver-1].set_title(f"Receiver {receiver}", fontsize=10, pad=24, color="white")
-            self.figure_layout[receiver-1].tick_params(axis='x', colors='white')
-            self.figure_layout[receiver-1].tick_params(axis='y', colors='white')
-        sub_window.widgets.refresh.clicked.connect(partial(self.load_file_methods, _METHOD_PATH))
-        sub_window.widgets.method_dropdown.currentTextChanged.connect(partial(self.run_transformation, None))
-        sub_window.widgets.graph_type.currentTextChanged.connect(partial(self.run_transformation, None))
-
-        self.methods = []
-        self.module = None
-        self.current_data: Optional[NDArray[np.float64]] = None
-        self.load_file_methods(_METHOD_PATH)
+        self.data_handler.updated_sequence.connect(lambda chirp_info: self.create_new_chirp_views(*chirp_info))
+        self.methods: Dict[ModuleInfo, str] = {}
+        self.data_list: List[List[NDArray[np.float64]]] = []
+        self.current_number_of_views = 0
+        self.chirp_list = None
+        self.modules: Dict[ModuleInfo, ModuleType] = {}
+        self.current_data = {}
+        self.pass_in_queue = mp.Queue()
+        self.event_queue = mp.Queue()
+        self.transform_queue = mp.Queue()
+        self.new_module_methods = mp.Queue()
+        self.empty_queues = mp.Event()
+        self.data_process = mp.Process(
+            target=run_arbitrary_code, 
+            args=(self.event_queue, self.pass_in_queue, self.new_module_methods, self.transform_queue, self.empty_queues)
+        )
+        self.data_process.start()
         
-        self.current_index = 0
-        self.subplots: List[Optional[Union[AxesImage, List[Line2D]]]] = [None, None, None]
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.check_arbitrary_run_request)
+        self.timer.start(16)
+        self.finished_arbitrary_queues = True
+        self.packets_in_flight = 0
     
-    def load_file_methods(self, file_path: Path):
+    def connect_widgets(self, new_tab: AllChirpContainerWindow):
+        self.load_all_files(new_tab)
+        new_tab.add_new_views(self.current_number_of_views)
+        new_tab.update_graph_type(new_tab.widgets.graph_type.combo_box.currentText())
+        new_tab.widgets.refresh.clicked.connect(partial(
+            self.load_all_files, new_tab
+        ))
+        new_tab.widgets.graph_type.combo_box.currentTextChanged.connect(partial(self.update_graph_type, new_tab))
+        for method_dropdown in new_tab.widgets.method_dropdowns.values():
+            method_dropdown.combo_box.currentTextChanged.connect(partial(self.update_graph_type, new_tab))
+
+    def load_all_files(self, new_tab: AllChirpContainerWindow):
+        self.timer.stop()
+        for module_info, method_dropdown in new_tab.widgets.method_dropdowns.items():
+            self.load_file_methods(module_info, method_dropdown.combo_box)
+        self.send_new_method_request(new_tab)
+        self.timer.start()
+
+    def load_file_methods(self, module_info: ModuleInfo, dropdown: QtWidgets.QComboBox):
         """Load the methods from another file for arbitrary code execution.
 
         Args:
             file_path: The file to load the methods from.
         """
-        if _MODULE_NAME in sys.modules:
-            del sys.modules[_MODULE_NAME]
+        if module_info.module_name in sys.modules:
+            del sys.modules[module_info.module_name]
 
         # Load module again
-        spec = importlib.util.spec_from_file_location(_MODULE_NAME, str(file_path.resolve()))
-        self.module = importlib.util.module_from_spec(spec)
-        sys.modules[_MODULE_NAME] = self.module
-        spec.loader.exec_module(self.module)
+        spec = importlib.util.spec_from_file_location(module_info.module_name, str(module_info.module_path.resolve()))
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot create spec for {module_info.module_path}")
+        self.modules[module_info.module_name] = importlib.util.module_from_spec(spec)
+        sys.modules[module_info.module_name] = self.modules[module_info.module_name]
+        spec.loader.exec_module(self.modules[module_info.module_name])
         
-        self.methods = [name for name, obj in inspect.getmembers(self.module, inspect.isfunction)]
-        self.sub_window.widgets.method_dropdown.clear()
-        self.sub_window.widgets.method_dropdown.addItem(_NO_METHOD)
-        self.sub_window.widgets.method_dropdown.addItems(self.methods)
+        self.methods[module_info.module_name] = [name for name, _ in inspect.getmembers(self.modules[module_info.module_name], inspect.isfunction) if not name.startswith("_")]
+        dropdown.clear()
+        dropdown.addItem(_NO_METHOD)
+        dropdown.addItems(self.methods[module_info.module_name])
         
-
-    def run_arbitrary_code(self, data: NDArray[np.float64]):
+    def send_new_method_request(self, tab_to_run: AllChirpContainerWindow):
+        method_list = []
+        for method_type, dropdown in tab_to_run.widgets.method_dropdowns.items():
+            method_list.append(MethodPacket(method_type, dropdown.getInnerText()))
+        self.new_module_methods.put(method_list)
+        self.event_queue.put(DataEventsToHandle.NEW_MODULES)
+        
+    def clear_data(self):
+        self.event_queue.put(DataEventsToHandle.CLEAR_DATA)
+        
+    def send_arbitrary_run_request(
+        self, 
+        tab_to_run: AllChirpContainerWindow, 
+        data: Union[List[NDArray[np.float64]], NDArray[np.float64]],
+        check_visibility: bool = True
+    ):
         """Run the arbitrary code from the loaded methods.
         
         Args:
             data_list: The data to pass into the methods.
         """
-        try:
-            current_metod = self.sub_window.widgets.method_dropdown.currentText()
-            if current_metod == _NO_METHOD:
-                transformed_data = data
-            else:
-                method = getattr(self.module, self.sub_window.widgets.method_dropdown.currentText())   
-                transformed_data = method(data, self.data_handler.current_sequence_dict)
-            return transformed_data
-        except Exception as exception:
-            traceback_object = exception.__traceback__
-            line_number = traceback_object.tb_lineno
-            self.main_window.timeout_label.setText(f"{line_number}: {exception}")
-            return None
-        
-    def run_transformation(self, data: Optional[NDArray[np.float64]] = None):
-        """Run the transformations provided by gui widgets."""
-        if data is not None:
-            transformed_data = self.run_arbitrary_code(data)
-        elif self.current_data is not None:
-            transformed_data = self.run_arbitrary_code(self.current_data)
-        else:
-            return
-        self.handle_graphs(transformed_data)
-
-    def clear_graph(self, receiver: int):
-        self.figure_layout[receiver].clear()
-        self.figure_layout[receiver].patch.set_facecolor(background_color)
-        self.figure_layout[receiver].set_title(f"Receiver {receiver}", fontsize=10, pad=24, color="white")
-
-    def draw_color_mesh_plot(self, transformed_data: NDArray[np.float64], receiver: int, boundaries: Tuple[int, int]):
-        if isinstance(self.subplots[receiver], AxesImage) and self.current_data.shape == transformed_data.shape:
-            self.subplots[receiver].set_data(transformed_data[receiver])
-            self.subplots[receiver].set_clim(boundaries[0], boundaries[1])
-        else:
-            self.clear_graph(receiver)
-            self.subplots[receiver] = self.figure_layout[receiver].imshow(
-                transformed_data[receiver], 
-                cmap="viridis",
-                aspect="auto"
-            )
-        self.current_data = transformed_data
-
-    def draw_2d_plot(self, transformed_data: NDArray[np.float64], receiver: int, boundaries: Tuple[int, int]):
-        if len(transformed_data[receiver].shape) > 1:
-            if isinstance(self.subplots[receiver], list) and len(self.subplots[receiver]) == len(self.figure_layout[receiver].get_lines()):
-                for old_line, new_line in zip(self.figure_layout[receiver].get_lines(), transformed_data[receiver]):
-                    old_line.set_ydata(new_line)
-                self.figure_layout[receiver].set_ylim(boundaries[0], boundaries[1])
-            else:
-                self.clear_graph(receiver)
-                self.subplots[receiver] = []
-                for new_line in transformed_data[receiver]:
-                    self.subplots[receiver].append(self.figure_layout[receiver].plot(
-                        np.arange(transformed_data[receiver].shape[1]), 
-                        new_line
-                    ))
-                self.figure_layout[receiver].set_ylim(boundaries[0], boundaries[1])
-                self.figure_layout[receiver].relim()
-                self.figure_layout[receiver].autoscale(enable=True, axis="x")
-        else:
-            if isinstance(self.subplots[receiver], Line2D) and len(self.figure_layout[receiver].get_lines()) == 1:
-                self.subplots[receiver].set_ydata(transformed_data[receiver])
-                self.subplots[receiver].set_clim(boundaries[0], boundaries[1])
-            else:
+        method_packets: List[MethodPacket] = []
+        all_data_group = False
+        for method_type, dropdown in tab_to_run.widgets.method_dropdowns.items():
+            method_packets.append(MethodPacket(method_type, dropdown.getInnerText()))
+            if method_type == _FEATURES_INFO and method_packets[-1].method_name != _NO_METHOD:
+                all_data_group = True
                 
-                self.clear_graph(receiver)
-                self.subplots[receiver] = self.figure_layout[receiver].plot(
-                    np.arange(transformed_data.shape[1]), 
-                    transformed_data[receiver]
-                )
-                self.figure_layout[receiver].set_ylim(boundaries[0], boundaries[1])
-                self.figure_layout[receiver].relim()
-                self.figure_layout[receiver].autoscale(enable=True, axis="x")
-                
-        self.current_data = transformed_data
-        
-    def handle_graphs(self, transformed_data: NDArray[np.float64]):
-        try:
-            max_value = 0.0
-            min_value = float("inf")
-            for receiver in range(0, _RECEIVER_COUNT):
-                data_max = np.max(transformed_data[receiver])
-                data_min = np.min(transformed_data[receiver])
-                if data_max > max_value:
-                    max_value = data_max
-                if data_min < min_value:
-                    min_value = data_min
-            boundaries = (min_value, max_value)
-            graph_type = self.sub_window.widgets.graph_type.currentText()
-            for receiver in range(0, _RECEIVER_COUNT):
-                if graph_type == GraphTypes.colormesh.value:
-                    self.draw_color_mesh_plot(transformed_data, receiver, boundaries)
-                elif graph_type == GraphTypes.plot_2d.value:
-                    self.draw_2d_plot(transformed_data, receiver, boundaries)
+        if check_visibility and (not tab_to_run.isVisible() and not all_data_group):
+            return 
+        data_packet = DataPacket(data, self.chirp_list, tab_to_run.identification)
+        self.pass_in_queue.put(PassInPacket(data_packet, method_packets))
+        self.event_queue.put(DataEventsToHandle.NEW_DATA)
 
-            self.figure_layout[receiver].figure.canvas.draw_idle()
+    def check_arbitrary_run_request(self):
+        try:
+            passback_packet: PassbackPacket = self.transform_queue.get_nowait()
+            
+            if passback_packet.error is not None:
+                self.data_handler.stop_acquisition()
+                self.packets_in_flight = 0
+                self.clear_data()
+                # self.main_window.timeout_label.setText(f"{file_name} Line {line_number}: {exception}")
+                self.pop_up = Popup(passback_packet.error)
+                self.pop_up.launch()
+            else:
+                self.packets_in_flight -= 1
+                tab_to_run = self.sub_window.seperate_viewer_tabs.view_tabs[passback_packet.tab_to_update]
+                self.handle_graphs(tab_to_run, passback_packet.transformed_data)
+                self.current_data[tab_to_run] = passback_packet.transformed_data
+
+        except Empty:
+            if not self.packets_in_flight:
+                self.data_handler.waiting_for_data = True
+
+    def count_up_chirps(self, element: ElementSequence, sequence_count: int = 0) -> int:
+        if element.type == FmcwElementType.IFX_SEQ_CHIRP:
+            sequence_count += 1
+        if element.type == FmcwElementType.IFX_SEQ_LOOP:
+            sequence_count = self.count_up_chirps(element.loop.sub_sequence, sequence_count)
+        if element.next_element is not None:
+            sequence_count = self.count_up_chirps(element.next_element, sequence_count)
+        return sequence_count
+    
+    def create_new_chirp_views(self, first_element: ElementSequence, chirp_list: List[CreateLine]):
+        self.current_element = first_element
+        self.chirp_list = chirp_list
+        for view_tab in self.sub_window.seperate_viewer_tabs.view_tabs.values():
+            view_tab.add_new_views(self.current_number_of_views)
+            view_tab.update_graph_type(view_tab.widgets.graph_type.combo_box.currentText())
+    
+    def iterate_through_each_view_tab(self, frame):
+        self.finished_arbitrary_queues = False
+        for view_tab in self.sub_window.seperate_viewer_tabs.view_tabs.values():
+            self.packets_in_flight += 1
+            self.send_arbitrary_run_request(view_tab, frame)
+        
+    def update_graph_type(self, tab_to_run: AllChirpContainerWindow):
+        self.timer.stop()
+        self.empty_queues.wait()
+        self.clear_data()
+        tab_to_run.update_graph_type(tab_to_run.widgets.graph_type.combo_box.currentText())
+        self.timer.start()
+
+    def handle_graphs(self, tab_to_run: AllChirpContainerWindow, transformed_data: List[NDArray[np.float64]]):
+        try:
+            if tab_to_run in self.current_data:
+                if len(transformed_data) != len(self.current_data[tab_to_run]):
+                    self.current_number_of_views = len(transformed_data)
+                    tab_to_run.add_new_views(self.current_number_of_views)
+                    print(f"New tab plots {time.time()}")
+                    
+                for current_chirp_data, transformed_chirp_data in zip(self.current_data[tab_to_run], transformed_data):
+                    if current_chirp_data.shape != transformed_chirp_data.shape:
+                        tab_to_run.setup_new_sub_plots(transformed_data)
+
+                        break
+            else:
+                print(f"New tab plots {time.time()}")
+                self.current_number_of_views = len(transformed_data)
+                tab_to_run.add_new_views(self.current_number_of_views)
+                tab_to_run.setup_new_sub_plots(transformed_data)
+            tab_to_run.update_views(transformed_data)
 
         except (ValueError, TypeError) as exception:
+            self.data_handler.stop_acquisition()
             traceback_object = exception.__traceback__
+            while traceback_object.tb_next:
+                traceback_object = traceback_object.tb_next
             line_number = traceback_object.tb_lineno
-            self.main_window.timeout_label.setText(f"{line_number}: {exception}")
+            file_name = traceback_object.tb_frame.f_code.co_filename
+            self.main_window.timeout_label.setText(f"{file_name} Line {line_number}: {exception}")
+            
+            pop_up_string = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+            self.pop_up = Popup(pop_up_string)
+            self.pop_up.launch()
+
             return None

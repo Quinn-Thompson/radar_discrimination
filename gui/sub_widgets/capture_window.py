@@ -4,7 +4,7 @@ from gui.sub_widgets.view_transforms import ViewTransforms
 from matplotlib.figure import Figure
 from PyQt6 import QtWidgets, QtCore
 from typing import Generator
-from gui.helpers import WindowWidgets
+from gui.helpers import WindowWidgets, LineEditWithText
 
 class CaptureWindowWidgets(WindowWidgets):
     """The widgets for the rx info window.
@@ -14,10 +14,14 @@ class CaptureWindowWidgets(WindowWidgets):
         """
         self.capture_button_time = QtWidgets.QPushButton()
         self.capture_button_frames = QtWidgets.QPushButton()
-        self.input_line = QtWidgets.QLineEdit()
+        self.amount_to_capture = LineEditWithText("Capture Amount/Time")
         self.save_button = QtWidgets.QPushButton()
-        self.save_location = QtWidgets.QLineEdit()
-        self.packet_prefix = QtWidgets.QLineEdit()
+        self.save_location = LineEditWithText("Save Location")
+        self.packet_prefix = LineEditWithText("Capture Save Prefix")
+        
+        self.start_acq = QtWidgets.QPushButton()
+        self.stop_acq = QtWidgets.QPushButton()
+        
         super().__init__()
 
 
@@ -28,57 +32,56 @@ class CaptureWindow(QtWidgets.QFrame):
         """Initialize the bloch spheres window.
         """
         super().__init__()
-        self.main_layout = QtWidgets.QVBoxLayout()
+        self.main_layout = QtWidgets.QHBoxLayout()
         self.widgets: CaptureWindowWidgets = CaptureWindowWidgets()
         self.setObjectName("BlochWindow")
         self.setLayout(self.main_layout)
-        self.matplotlib_layout = QtWidgets.QGridLayout()
-        self.buttons_layout = QtWidgets.QGridLayout()
-        self.save_layout = QtWidgets.QGridLayout()
+        self.buttons_layout = QtWidgets.QVBoxLayout()
         self.view_transforms_window = ViewTransforms()
-        self.main_layout.addWidget(self.view_transforms_window)
+
         self.main_layout.addLayout(self.buttons_layout)
-        self.main_layout.addLayout(self.save_layout)
+        self.main_layout.addWidget(self.view_transforms_window)
         
         self.buttons_layout.addWidget(
             self.widgets.capture_button_time,
-            0, 
-            0,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
         self.buttons_layout.addWidget(
             self.widgets.capture_button_frames,
-            0, 
-            1,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
         self.buttons_layout.addWidget(
-            self.widgets.input_line,
-            0, 
-            2,
+            self.widgets.amount_to_capture,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
 
         self.widgets.capture_button_time.setText("Capture For X Time")
         self.widgets.capture_button_frames.setText("Capture X Frames")
         
-        self.save_layout.addWidget(
+        self.buttons_layout.addWidget(
             self.widgets.save_location,
-            0,
-            0,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
-        self.save_layout.addWidget(
+        self.buttons_layout.addWidget(
             self.widgets.packet_prefix,
-            0,
-            1,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
-        self.save_layout.addWidget(
+        self.buttons_layout.addWidget(
             self.widgets.save_button,
-            0,
-            2,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
+        
+        self.buttons_layout.addWidget(
+            self.widgets.start_acq,
+            alignment=QtCore.Qt.AlignmentFlag.AlignCenter
+        )
+        
+        self.buttons_layout.addWidget(
+            self.widgets.stop_acq,
+            alignment=QtCore.Qt.AlignmentFlag.AlignCenter
+        )
+        
+        self.widgets.start_acq.setText("Start Acquiring")
+        self.widgets.stop_acq.setText("Stop Acquiring")
         
         self.widgets.save_button.setText("Save Data Location")

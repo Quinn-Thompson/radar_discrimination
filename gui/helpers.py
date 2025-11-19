@@ -4,6 +4,25 @@ from PyQt6.QtCore import Qt, QMimeData
 from PyQt6.QtGui import QDrag, QPixmap, QDragMoveEvent
 from typing import Generator, List
 
+from pathlib import Path
+from typing import NamedTuple
+
+ModuleInfo = NamedTuple("ModuleInfo", [("module_path", Path), ("module_name", str)])
+
+_METHOD_FOLDER = Path("transformation_methods")
+
+_TRANSFORM_PATH = _METHOD_FOLDER / "transformations.py"
+_TRANSFORM_NAME = "Transformations"
+_TRANSFORM_INFO = ModuleInfo(_TRANSFORM_PATH, _TRANSFORM_NAME)
+
+_FEATURE_PATH = _METHOD_FOLDER / "features.py"
+_FEATURES_NAME = "Features"
+_FEATURES_INFO = ModuleInfo(_FEATURE_PATH, _FEATURES_NAME)
+
+_RECEIVER_COUNT = 3
+
+_NO_METHOD = "none"
+
 background_color = "#1A1A1A"
 hover_color = "#4A4A4A"
 clicked_color = "#8A8A8A"
@@ -30,6 +49,11 @@ drop_area_style = (
     "border: none;"
     "padding: 6px;"
 )
+
+small_item_window_style = (
+    "border-radius: 0px;"
+)
+
 
 class DraggableLabel(QtWidgets.QLabel):
     def mouseMoveEvent(self, event: QDragMoveEvent):

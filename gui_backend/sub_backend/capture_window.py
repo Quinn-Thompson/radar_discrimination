@@ -32,12 +32,13 @@ class CaptureBackend:
         sub_window.widgets.capture_button_frames.clicked.connect(self.capture_x_frames)
         sub_window.widgets.capture_button_time.clicked.connect(self.capture_for_x_time)
         sub_window.widgets.save_button.clicked.connect(self.find_location_to_save)
+        
+        sub_window.widgets.start_acq.clicked.connect(lambda: self.data_handler.start_acquisition())
+        sub_window.widgets.stop_acq.clicked.connect(lambda: self.data_handler.stop_acquisition())
         self.data_handler.update_matplotlib.connect(lambda frame: self.update_plots(frame.data))
 
     def update_plots(self, frame: NDArray[np.float64]):
-        self.data_handler.waiting_for_data = False
-        self.transforms_backend.run_transformation(frame)
-        self.data_handler.waiting_for_data = True
+        self.transforms_backend.iterate_through_each_view_tab(frame)
 
     def find_location_to_save(self):
         """Browse the file explorer for where to save the data."""
@@ -48,29 +49,29 @@ class CaptureBackend:
         )
 
         if folder:
-            self.sub_window.widgets.save_location.setText(folder)
+            self.sub_window.widgets.save_location.setInnerText(folder)
         else:
-            self.sub_window.widgets.save_location.setText("No file selected")
+            self.sub_window.widgets.save_location.setInnerText("No file selected")
 
     def capture_x_frames(self):
         """The logic for what the button press should do for capturing x frames."""
-        if self.sub_window.widgets.packet_prefix.text():
-            packet_name = f"{self.sub_window.widgets.packet_prefix.text()}_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")}"
+        if self.sub_window.widgets.packet_prefix.getInnerText():
+            packet_name = f"{self.sub_window.widgets.packet_prefix.getInnerText()}_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")}"
         else:
             packet_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
         
         self.data_handler.capture_for_x_count(
-            int(self.sub_window.widgets.input_line.text()), Path(self.sub_window.widgets.save_location.text()) / packet_name
+            int(self.sub_window.widgets.amount_to_capture.getInnerText()), Path(self.sub_window.widgets.save_location.getInnerText()) / packet_name
         )
     
     def capture_for_x_time(self):
         """The logic for what the button press should do for capturing for x time."""
-        if self.sub_window.widgets.packet_prefix.text():
-            packet_name = f"{self.sub_window.widgets.packet_prefix.text()}_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")}"
+        if self.sub_window.widgets.packet_prefix.getInnerText():
+            packet_name = f"{self.sub_window.widgets.packet_prefix.getInnerText()}_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")}"
         else:
             packet_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
         
         self.data_handler.capture_for_x_time(
-            float(self.sub_window.widgets.input_line.text()), Path(self.sub_window.widgets.save_location.text()) / packet_name
+            float(self.sub_window.widgets.amount_to_capture.getInnerText()), Path(self.sub_window.widgets.save_location.getInnerText()) / packet_name
         )
     
