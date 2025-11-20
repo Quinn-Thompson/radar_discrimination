@@ -58,12 +58,12 @@ class SignalWindowBackend():
         self.sub_window.action_window.widgets.send_to_device.clicked.connect(self.acquire_specified_config)
 
     def acquire_specified_config(self):
-        if self.sub_window.action_child is None:
+        if self.sub_window.sub_element is None:
             return
-        if self.sub_window.action_child.label_name == Actions.Simple_Config.value:
-            first_element = self.simple_config(self.sub_window.action_child)
+        if self.sub_window.sub_element.label_name == Actions.Simple_Config.value:
+            first_element = self.simple_config(self.sub_window.sub_element)
         else:
-            first_element, _ = self.action_loop(self.sub_window.action_child)
+            first_element, _ = self.action_loop(self.sub_window.sub_element)
         
         self.reconstruct_waveform(first_element)
         self.data_handler.create_new_config(first_element, self.chirp_list)
@@ -109,19 +109,19 @@ class SignalWindowBackend():
                 element_sequence.delay = current_action.values
             elif current_action.label_name == Actions.Loop.value:
                 element_sequence.type = FmcwElementType.IFX_SEQ_LOOP
-                loop_sequence, chirp_sequence = self.action_loop(current_action.action_child, chirp_sequence)
+                loop_sequence, chirp_sequence = self.action_loop(current_action.sub_element, chirp_sequence)
                 current_action.values.sub_sequence = loop_sequence
                 element_sequence.loop = current_action.values
                 
             if current_action == action_first:
                 first_element_sequence = element_sequence
             
-            if current_action.action_next is None:
+            if current_action.next_element is None:
                 element_sequence.next_element = None
                 break
             
             previous_element_sequence = element_sequence
-            current_action = current_action.action_next
+            current_action = current_action.sub_element
         return first_element_sequence, chirp_sequence
 
     def create_signal(self, current_sequence: ElementSequence, movement_list: List[CreateLine]):

@@ -25,9 +25,17 @@ class VisualizationWrapper(QtCore.QObject):
         self.data_handler = DataHandler()
         self.data_handler.info_signal = self.info_signal
         self.info_signal.connect(lambda text: main_window.timeout_label.setText(text))
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.data_handler.poll_data_queue)
-        self.timer.start(100)  # check every 100ms
+        
+        # check for new frame in queue every 25 milliseconds
+        self.data_timer = QTimer()
+        self.data_timer.timeout.connect(self.data_handler.poll_data_queue)
+        self.data_timer.start(25)
+        
+        # check for new error in passback queue evern 0.5 seconds
+        self.printout_timer = QTimer()
+        self.printout_timer.timeout.connect(self.data_handler.poll_passback)
+        self.printout_timer.start(500)
+        
         
         self.main_window = main_window
         self.view_captured = ViewCapturedBackend(self.main_window, self.main_window.sub_window_widgets.view_captured, self.data_handler)

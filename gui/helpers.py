@@ -5,7 +5,7 @@ from PyQt6.QtGui import QDrag, QPixmap, QDragMoveEvent
 from typing import Generator, List
 
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, Dict
 
 ModuleInfo = NamedTuple("ModuleInfo", [("module_path", Path), ("module_name", str)])
 
@@ -37,7 +37,7 @@ global_budget_window_style = (
     f"border-color: {border_color};"
     f"color: {border_color};"
     "font: bold 14px;"
-    "min-width: 50px;"
+    "min-width: 10px;"
     "padding: 6px;"
 )
 
@@ -45,7 +45,7 @@ drop_area_style = (
     f"background-color: {background_color};"
     f"color: {border_color};"
     "font: bold 14px;"
-    "min-width: 50px;"
+    "min-width: 10px;"
     "border: none;"
     "padding: 6px;"
 )
@@ -96,6 +96,16 @@ class WindowWidgets():
                 buttons.append(item)
         return buttons
 
+    def get_json_dictionary(self) -> Dict[str, str]:
+        my_contents_dict = {}
+        for key, value in self.__dict__.items():
+            if isinstance(value, (LineEditWithText, ComboBoxWithText)):
+                my_contents_dict[key] = value.getInnerText()
+        return my_contents_dict
+
+    def set_json_dictionary(self, json_dictionary: Dict[str, str]) -> None:
+        for key, value in json_dictionary.items():
+            self.__dict__[key].setInnterText(value)
 
 class LineEditWithText(QtWidgets.QWidget):
     def __init__(self, text: str):

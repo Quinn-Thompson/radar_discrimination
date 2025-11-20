@@ -3,7 +3,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from gui.sub_widgets.view_transforms import ViewTransforms
 from matplotlib.figure import Figure
 from PyQt6 import QtWidgets, QtCore
-from typing import Generator
+from typing import Generator, Dict
 from gui.helpers import WindowWidgets, LineEditWithText
 
 class CaptureWindowWidgets(WindowWidgets):
@@ -23,7 +23,6 @@ class CaptureWindowWidgets(WindowWidgets):
         self.stop_acq = QtWidgets.QPushButton()
         
         super().__init__()
-
 
 class CaptureWindow(QtWidgets.QFrame):
     """The frame for displaying the bloch spheres.

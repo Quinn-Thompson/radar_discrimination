@@ -16,4 +16,6 @@ class MainWindowBackend(QtCore.QObject):
         self.window.showMaximized()
         self.circuit_initialized = False
         self.bloch_backend = VisualizationWrapper(self.window)
+        self.window.save_button.clicked.connect(self.window.get_json_dictionary)
+        self.window.load_button.clicked.connect(self.window.set_json_dictionary)
         

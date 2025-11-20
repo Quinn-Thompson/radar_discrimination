@@ -38,6 +38,11 @@ class CaptureBackend:
         self.data_handler.update_matplotlib.connect(lambda frame: self.update_plots(frame.data))
 
     def update_plots(self, frame: NDArray[np.float64]):
+        """Update the plots in the view transforms.
+
+        Args:
+            frame
+        """
         self.transforms_backend.iterate_through_each_view_tab(frame)
 
     def find_location_to_save(self):
@@ -55,23 +60,33 @@ class CaptureBackend:
 
     def capture_x_frames(self):
         """The logic for what the button press should do for capturing x frames."""
-        if self.sub_window.widgets.packet_prefix.getInnerText():
+        if self.sub_window.widgets.packet_prefix.getInnerText() != "":
             packet_name = f"{self.sub_window.widgets.packet_prefix.getInnerText()}_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")}"
         else:
             packet_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
         
+        capture_count = self.sub_window.widgets.amount_to_capture.getInnerText()
+        
+        if capture_count == "":
+            capture_count = 0
+        
         self.data_handler.capture_for_x_count(
-            int(self.sub_window.widgets.amount_to_capture.getInnerText()), Path(self.sub_window.widgets.save_location.getInnerText()) / packet_name
+            int(capture_count), Path(self.sub_window.widgets.save_location.getInnerText()) / packet_name
         )
     
     def capture_for_x_time(self):
         """The logic for what the button press should do for capturing for x time."""
-        if self.sub_window.widgets.packet_prefix.getInnerText():
+        if self.sub_window.widgets.packet_prefix.getInnerText() != "":
             packet_name = f"{self.sub_window.widgets.packet_prefix.getInnerText()}_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")}"
         else:
             packet_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
         
+        capture_time = self.sub_window.widgets.amount_to_capture.getInnerText()
+        
+        if capture_time == "":
+            capture_time = 0.0
+        
         self.data_handler.capture_for_x_time(
-            float(self.sub_window.widgets.amount_to_capture.getInnerText()), Path(self.sub_window.widgets.save_location.getInnerText()) / packet_name
+            float(capture_time), Path(self.sub_window.widgets.save_location.getInnerText()) / packet_name
         )
     

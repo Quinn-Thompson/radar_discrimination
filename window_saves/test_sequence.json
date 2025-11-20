@@ -1,0 +1,51 @@
+{
+    "sequence": [
+        {
+            "type": "loop",
+            "num_repetitions": 0,
+            "repetition_time_s": 0.1,
+            "sequence": [
+                {
+                    "type": "loop",
+                    "num_repetitions": 4,
+                    "repetition_time_s": 0.005,
+                    "sequence": [
+                        {
+                            "type": "chirp",
+                            "start_frequency_Hz": 58000000000.0,
+                            "end_frequency_Hz": 63500000000.0,
+                            "sample_rate_Hz": 2000000.0,
+                            "num_samples": 32,
+                            "rx_mask": 7,
+                            "tx_mask": 1,
+                            "tx_power_level": 31,
+                            "lp_cutoff_Hz": 80000,
+                            "hp_cutoff_Hz": 500000,
+                            "if_gain_dB": 23
+                        }
+                    ]
+                },
+                {
+                    "type": "loop",
+                    "num_repetitions": 4,
+                    "repetition_time_s": 0.005,
+                    "sequence": [
+                        {
+                            "type": "chirp",
+                            "start_frequency_Hz": 58000000000.0,
+                            "end_frequency_Hz": 63500000000.0,
+                            "sample_rate_Hz": 2000000.0,
+                            "num_samples": 64,
+                            "rx_mask": 7,
+                            "tx_mask": 1,
+                            "tx_power_level": 31,
+                            "lp_cutoff_Hz": 80000,
+                            "hp_cutoff_Hz": 500000,
+                            "if_gain_dB": 23
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

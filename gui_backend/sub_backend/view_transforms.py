@@ -51,12 +51,18 @@ class DataEventsToHandle(Enum):
     NEW_MODULES = 2
     END_TRANSMISSION = 3
 
-def new_methods(method_packets: List[MethodPacket], modules: Dict[ModuleInfo, ModuleType]):
+def new_methods(method_packets: List[MethodPacket], modules: Dict[ModuleInfo, ModuleType]) -> None:
+    """Grab the new methods within a module for the new process.
+
+    Args:
+        method_packets: A list of the different file locations to check.
+        modules: A dictionary containing all the already known modules.
+    """
     for method_packet in method_packets:
         if method_packet.module_info.module_name in sys.modules:
             del sys.modules[method_packet.module_info.module_name]
 
-        # Load module again
+        # load module again
         spec = importlib.util.spec_from_file_location(method_packet.module_info.module_name, str(method_packet.module_info.module_path.resolve()))
         if spec is None or spec.loader is None:
             raise ImportError(f"Cannot create spec for {method_packet.module_info.module_path}")
@@ -64,32 +70,48 @@ def new_methods(method_packets: List[MethodPacket], modules: Dict[ModuleInfo, Mo
         sys.modules[method_packet.module_info.module_name] = modules[method_packet.module_info.module_name]
         spec.loader.exec_module(modules[method_packet.module_info.module_name])
 
-def handle_methods(data: DataPacket, method_packets: List[MethodPacket], modules: Dict[ModuleInfo, ModuleType], data_list: Dict[str, List[List[NDArray[np.float64]]]]) -> List[NDArray[np.float64]]:
-    transformed_data = data.frame_data
-    if data.tab_to_update not in data_list:
-        data_list[data.tab_to_update] = []
+def handle_methods(
+    data_packet: DataPacket, 
+    method_packets: List[MethodPacket], 
+    modules: Dict[ModuleInfo, ModuleType], 
+    data_list: Dict[str, List[List[NDArray[np.float64]]]]
+) -> List[NDArray[np.float64]]:
+    """Handles transforming the data for the GUI window.
+
+    Args:
+        data_packet: A packet of data containing the frame data and which tab to port the transform to.
+        method_packets: A packet containing a list of the method names to transform using.
+        modules: A dictionary containing all the already known modules.
+        data_list: A dictionary containing previous data.
+
+    Returns:
+        A list (each chirp sequence) of frames (receiver, chirp per frame, sample per chirp)
+    """
+    transformed_data = data_packet.frame_data
+    if data_packet.tab_to_update not in data_list: 
+        data_list[data_packet.tab_to_update] = []
     
     for method_packet in method_packets:
         if method_packet.module_info.module_name == _TRANSFORM_NAME:
             if method_packet.method_name == _NO_METHOD:
-                if not isinstance(data.frame_data, list):
+                if not isinstance(data_packet.frame_data, list):
                     transformed_data = [transformed_data]
             else:
                 transform_method = getattr(modules[method_packet.module_info.module_name], method_packet.method_name)
-                if not isinstance(data.frame_data, list):
-                    transformed_data = transform_method([transformed_data], data.chirp_list)
+                if not isinstance(data_packet.frame_data, list):
+                    transformed_data = transform_method([transformed_data], data_packet.chirp_list)
                 else:
-                    transformed_data = transform_method(transformed_data, data.chirp_list)
+                    transformed_data = transform_method(transformed_data, data_packet.chirp_list)
 
         if method_packet.module_info.module_name == _FEATURES_NAME:
             if method_packet.method_name != _NO_METHOD:
-                if len(data_list[data.tab_to_update]) > 100:
-                    data_list[data.tab_to_update].pop(0)
-                data_list[data.tab_to_update].append(transformed_data)
+                if len(data_list[data_packet.tab_to_update]) > 100:
+                    data_list[data_packet.tab_to_update].pop(0)
+                data_list[data_packet.tab_to_update].append(transformed_data)
                 feature_method = getattr(modules[method_packet.module_info.module_name], method_packet.method_name)
-                transformed_data = feature_method(data_list[data.tab_to_update], data.chirp_list)
+                transformed_data = feature_method(data_list[data_packet.tab_to_update], data_packet.chirp_list)
             else:
-                data_list[data.tab_to_update] = [transformed_data]
+                data_list[data_packet.tab_to_update] = [transformed_data]
 
                 
     return transformed_data
@@ -97,6 +119,15 @@ def handle_methods(data: DataPacket, method_packets: List[MethodPacket], modules
 def run_arbitrary_code(
     event_queue: mp.Queue, pass_in_queue: mp.Queue, new_module_methods: mp.Queue, transformed_data_queue: mp.Queue, empty_queues: Event
 ):
+    """Run arbitrary code within some files.
+
+    Args:
+        event_queue: A queue to handle when an event occurs.
+        pass_in_queue: A queue to handle the data.
+        new_module_methods: A queue to handle to tell the process which files to re check for modules.
+        transformed_data_queue: A queue to handle the passed back .
+        empty_queues: The event of the event queue being empty.
+    """
     modules = {}
     data_list = {}
     while True:
@@ -106,12 +137,8 @@ def run_arbitrary_code(
                 empty_queues.clear()
                 if event == DataEventsToHandle.NEW_DATA:
                     pass_in_data: PassInPacket = pass_in_queue.get_nowait()
-                    # for method_packet in pass_in_data.method_packets:
-                    #     print(f"tab {pass_in_data.data_packet.tab_to_update}, method {method_packet.method_name}")
-                    
+
                     feature_data = handle_methods(pass_in_data.data_packet, pass_in_data.method_packets, modules, data_list)
-                    # for feature_chirp in feature_data:
-                    #     print(f"data shape {feature_chirp.shape}")
                     transformed_data_queue.put(PassbackPacket(feature_data, pass_in_data.data_packet.tab_to_update))
                 elif event == DataEventsToHandle.NEW_MODULES:
                     method_packets = new_module_methods.get_nowait()
@@ -175,6 +202,11 @@ class ViewTransformsBackend:
         self.packets_in_flight = 0
     
     def connect_widgets(self, new_tab: AllChirpContainerWindow):
+        """When a new tab is created, connect the sub widgets to their perspective calls.
+
+        Args:
+            new_tab: The tab object which has been created.
+        """
         self.load_all_files(new_tab)
         new_tab.add_new_views(self.current_number_of_views)
         new_tab.update_graph_type(new_tab.widgets.graph_type.combo_box.currentText())
@@ -186,6 +218,11 @@ class ViewTransformsBackend:
             method_dropdown.combo_box.currentTextChanged.connect(partial(self.update_graph_type, new_tab))
 
     def load_all_files(self, new_tab: AllChirpContainerWindow):
+        """Load the methods from the arbitrary code execution files.
+
+        Args:
+            new_tab: The tab object which has just been created.
+        """
         self.timer.stop()
         for module_info, method_dropdown in new_tab.widgets.method_dropdowns.items():
             self.load_file_methods(module_info, method_dropdown.combo_box)
@@ -196,7 +233,8 @@ class ViewTransformsBackend:
         """Load the methods from another file for arbitrary code execution.
 
         Args:
-            file_path: The file to load the methods from.
+            module_info: The different module information used to load.
+            dropdown: Where to add the new methods to.
         """
         if module_info.module_name in sys.modules:
             del sys.modules[module_info.module_name]
@@ -215,6 +253,11 @@ class ViewTransformsBackend:
         dropdown.addItems(self.methods[module_info.module_name])
         
     def send_new_method_request(self, tab_to_run: AllChirpContainerWindow):
+        """Request the other process to update what methods it has
+
+        Args:
+            tab_to_run: The tab that needs to update those methods.
+        """
         method_list = []
         for method_type, dropdown in tab_to_run.widgets.method_dropdowns.items():
             method_list.append(MethodPacket(method_type, dropdown.getInnerText()))
@@ -222,6 +265,7 @@ class ViewTransformsBackend:
         self.event_queue.put(DataEventsToHandle.NEW_MODULES)
         
     def clear_data(self):
+        """Clear all data within the processes data list."""
         self.event_queue.put(DataEventsToHandle.CLEAR_DATA)
         
     def send_arbitrary_run_request(
@@ -233,7 +277,9 @@ class ViewTransformsBackend:
         """Run the arbitrary code from the loaded methods.
         
         Args:
-            data_list: The data to pass into the methods.
+            tab_to_run: Where to put the data once it has been transformed.
+            data: The data to transform.
+            check_visibility: Whether to check visibility to reduce overhead.
         """
         method_packets: List[MethodPacket] = []
         all_data_group = False
@@ -249,6 +295,7 @@ class ViewTransformsBackend:
         self.event_queue.put(DataEventsToHandle.NEW_DATA)
 
     def check_arbitrary_run_request(self):
+        """Poll the transform queue to see if new data has been transformed."""
         try:
             passback_packet: PassbackPacket = self.transform_queue.get_nowait()
             
@@ -269,27 +316,28 @@ class ViewTransformsBackend:
             if not self.packets_in_flight:
                 self.data_handler.waiting_for_data = True
 
-    def count_up_chirps(self, element: ElementSequence, sequence_count: int = 0) -> int:
-        if element.type == FmcwElementType.IFX_SEQ_CHIRP:
-            sequence_count += 1
-        if element.type == FmcwElementType.IFX_SEQ_LOOP:
-            sequence_count = self.count_up_chirps(element.loop.sub_sequence, sequence_count)
-        if element.next_element is not None:
-            sequence_count = self.count_up_chirps(element.next_element, sequence_count)
-        return sequence_count
-    
     def create_new_chirp_views(self, first_element: ElementSequence, chirp_list: List[CreateLine]):
-        self.current_element = first_element
+        """Create new tabs for when the data has a new shape or when a new tab is added.
+
+        Args:
+            first_element: Unused.
+            chirp_list: A list of objects storing the start and ned frequency of the chirps and their duration.
+        """
         self.chirp_list = chirp_list
         for view_tab in self.sub_window.seperate_viewer_tabs.view_tabs.values():
             view_tab.add_new_views(self.current_number_of_views)
             view_tab.update_graph_type(view_tab.widgets.graph_type.combo_box.currentText())
     
-    def iterate_through_each_view_tab(self, frame):
+    def iterate_through_each_view_tab(self, chirp_frames: Union[List[NDArray[np.float64]], NDArray[np.float64]]):
+        """Iterate through all tabs within the window.
+
+        Args:
+            chirp_frames: The list of chirp frames to transform.
+        """
         self.finished_arbitrary_queues = False
         for view_tab in self.sub_window.seperate_viewer_tabs.view_tabs.values():
             self.packets_in_flight += 1
-            self.send_arbitrary_run_request(view_tab, frame)
+            self.send_arbitrary_run_request(view_tab, chirp_frames)
         
     def update_graph_type(self, tab_to_run: AllChirpContainerWindow):
         self.timer.stop()
