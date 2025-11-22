@@ -1,17 +1,18 @@
 """Window to allow for capturing and saving data."""
 from gui.sub_widgets.capture_window import CaptureWindow
-from gui_backend.helpers import _RECEIVER_COUNT
+from gui_backend.helpers import _RECEIVER_COUNT, TimeStampData
 from gui_backend.pull_data import DataHandler, TimeStampData
 from gui_backend.sub_backend.view_transforms import ViewTransformsBackend
 from gui.main_window import MainWindow
 import numpy as np
 from numpy.typing import NDArray
 from matplotlib.axes import Axes
-from typing import List
+from typing import List, Optional
 from PyQt6.QtWidgets import QFileDialog
 from gui.helpers import background_color
 from pathlib import Path
 from datetime import datetime
+
 
 class CaptureBackend:
     """The backend operations for the capturing window."""
@@ -32,18 +33,22 @@ class CaptureBackend:
         sub_window.widgets.capture_button_frames.clicked.connect(self.capture_x_frames)
         sub_window.widgets.capture_button_time.clicked.connect(self.capture_for_x_time)
         sub_window.widgets.save_button.clicked.connect(self.find_location_to_save)
-        
-        sub_window.widgets.start_acq.clicked.connect(lambda: self.data_handler.start_acquisition())
-        sub_window.widgets.stop_acq.clicked.connect(lambda: self.data_handler.stop_acquisition())
-        self.data_handler.update_matplotlib.connect(lambda frame: self.update_plots(frame.data))
 
-    def update_plots(self, frame: NDArray[np.float64]):
+        sub_window.widgets.start_no_data_acquisitions.clicked.connect(lambda: self.data_handler.start_no_data_acquisition())        
+        sub_window.widgets.start_acquisitions.clicked.connect(lambda: self.data_handler.start_acquisition())
+        sub_window.widgets.stop_acquisitions.clicked.connect(lambda: self.data_handler.stop_acquisition())
+        self.data_handler.update_matplotlib.connect(lambda time_stamp_data: self.update_plots(time_stamp_data))
+
+    def update_plots(self, time_stamp_data: Optional[TimeStampData]):
         """Update the plots in the view transforms.
 
         Args:
             frame
         """
-        self.transforms_backend.iterate_through_each_view_tab(frame)
+        if time_stamp_data is not None:
+            self.transforms_backend.iterate_through_each_view_tab(time_stamp_data.data)
+        else:
+            self.transforms_backend.iterate_through_each_view_tab(time_stamp_data)
 
     def find_location_to_save(self):
         """Browse the file explorer for where to save the data."""

@@ -45,7 +45,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.central = self.setCentralWidget(self.central_widget)
         
     def _init_widgets(self) -> None:
-        """Initialize th separate sub windows and toolbar."""
+        """Initialize the separate sub windows and toolbar."""
         self.root_layoutV = QtWidgets.QVBoxLayout()
         self.save_load_layout = QtWidgets.QHBoxLayout()
         self.save_button = QtWidgets.QPushButton()
@@ -57,9 +57,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.save_load_layout.addWidget(self.load_button)
         
         self.tabs = QtWidgets.QTabWidget()
-        self.tabs.addTab(self.sub_window_widgets.view_captured, "View Captured Data")
-        self.tabs.addTab(self.sub_window_widgets.capture_window, "Capture Window")
-        self.tabs.addTab(self.sub_window_widgets.signal_window, "Signal Window")
+        self.tabs.addTab(self.sub_window_widgets.signal_window, "Signal Sequence Window")
+        self.tabs.addTab(self.sub_window_widgets.capture_window, "View/Capture Window")
+        self.tabs.addTab(self.sub_window_widgets.view_captured, "View Captured Data (In Progress)")
         self.timeout_label = QtWidgets.QLabel()
         self.timeout_label.setText("Active")
         

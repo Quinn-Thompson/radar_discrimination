@@ -549,8 +549,8 @@ class ContainerLabel(QtWidgets.QWidget):
             my_contents[-1].update(**current_sequence.values.get_json_dictionary())
             if current_sequence.sub_element is not None:
                 my_contents[-1][_SEQUENCE] = current_sequence.sub_element.get_json_dictionary()
-            current_sequence = current_sequence.next_element
             my_contents[-1][_ELEMENT_NAME] = current_sequence.label_name
+            current_sequence = current_sequence.next_element
         return my_contents
         
     def set_json_dictionary(

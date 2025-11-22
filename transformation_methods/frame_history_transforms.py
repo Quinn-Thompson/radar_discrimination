@@ -9,14 +9,14 @@ from sklearn.preprocessing import StandardScaler
 
 _NUM_BINS = 300
 
-def cluster(all_data: List[List[NDArray[np.float64]]], chirp_list: List[CreateLine]) -> List[NDArray[np.float64]]:
+def t_cluster(frame_history: List[List[NDArray[np.float64]]]) -> List[NDArray[np.float64]]:
     # create a list (for each different chirp sequence) for 
-    concatenated_data = [np.empty((chirp_sequence_frame.shape[0], len(all_data) * chirp_sequence_frame.shape[1], 2)) for chirp_sequence_frame in all_data[0]]
+    concatenated_data = [np.empty((chirp_sequence_frame.shape[0], len(frame_history) * chirp_sequence_frame.shape[1], 2)) for chirp_sequence_frame in frame_history[0]]
     # scalar = StandardScaler()
     clusters = hdbscan.HDBSCAN(min_cluster_size=2)
     scalar = StandardScaler()
     # for each data point
-    for transformed_frame_list_index, transformed_frame_list in enumerate(all_data):
+    for transformed_frame_list_index, transformed_frame_list in enumerate(frame_history):
         # for each chirp sequence
         for chirp_sequence_frame_index, chirp_sequence_frame in enumerate(transformed_frame_list):
             

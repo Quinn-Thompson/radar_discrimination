@@ -3,23 +3,17 @@ import multiprocessing as mp
 from multiprocessing.synchronize import Event
 from ifxradarsdk.fmcw import DeviceFmcw
 from ifxradarsdk.fmcw.types import FmcwSimpleSequenceConfig, FmcwSequenceChirp, ifxStructure, FmcwSequenceDelay, FmcwSequenceLoop, FmcwSequenceElement, FmcwElementType
-from ifxradarsdk.common.exceptions import ErrorNumSamplesOutOfRange
 from pathlib import Path
-from typing import Dict, Any, Union, List, Optional
-from dataclasses import dataclass
-import json
+from typing import Dict, List, Optional
 from PyQt6.QtCore import QTimer, pyqtSignal, QObject, QMutex
 from queue import Empty
 import time
-from numpy.typing import NDArray
 import numpy as np
 from functools import partial
 from datetime import datetime
 from ctypes import POINTER
-from gui_backend.helpers import ElementSequence, CreateLine, EventsToHandle
-from enum import Enum
-from gui.main_window import MainWindow 
-from threading import Thread
+from gui_backend.helpers import ElementSequence, CreateLine, EventsToHandle, TimeStampData
+
 
 class_registry: Dict[str, ifxStructure] = {
     "FmcwSequenceChirp": FmcwSequenceChirp,
@@ -27,12 +21,6 @@ class_registry: Dict[str, ifxStructure] = {
 
 _CONFIG_DIR = Path("config")
 _CONFIG_PATH = _CONFIG_DIR / "device_configs.json"
-
-@dataclass
-class TimeStampData():
-    """Numpy data that has a time stamp."""
-    time_stamp: float
-    data: NDArray[np.float64]
 
 def create_sequence_from_object(first_action: ElementSequence) -> FmcwSequenceElement:
     element = FmcwSequenceElement()
@@ -73,11 +61,9 @@ def run_device_inner_loop(data_queue: mp.Queue, event_passed: Event, event_queue
                     passback_queue.put("Succeeded in Setting New Sequence")
                     current_sequence = new_sequence
                 elif event == EventsToHandle.STOP_ACQUISITION:
-                    passback_queue.put("Stopped Acquisition")
                     device.stop_acquisition()
                     acquire = False
                 elif event == EventsToHandle.START_ACQUISITION:
-                    passback_queue.put("Started Acquisition")
                     device.start_acquisition()
                     acquire = True
                     
@@ -95,7 +81,7 @@ def gather_data(data_queue: mp.Queue, event_passed: Event, event_queue: mp.Queue
             run_device_inner_loop(data_queue, event_passed, event_queue, fmcw_custom, passback_queue, current_sequence)
         except Exception as exception:
             passback_queue.put(exception)
-            time.sleep(1.0)
+            time.sleep(2.0)
             
 
 class DataHandler(QObject):
@@ -116,6 +102,7 @@ class DataHandler(QObject):
 
         self.info_signal: pyqtSignal = None
         self.acquiring = False
+        self.no_data_acquisition = False
         
         self.current_data = None
         self.waiting_for_data = True
@@ -131,14 +118,21 @@ class DataHandler(QObject):
         self.event_queue.put(EventsToHandle.STOP_ACQUISITION)
         self.event_passed.set()
         self.acquiring = False
+        self.no_data_acquisition = False
+        self.info_signal.emit("Stopped All Acquisitions")
 
     def start_acquisition(self) -> None:
         self.event_queue.put(EventsToHandle.START_ACQUISITION)
         self.event_passed.set()
         self.acquiring = True
+        self.info_signal.emit("Started Device Acquisitions")
 
-    def create_new_config(self, first_element: ElementSequence, chirp_list: List[CreateLine]):
-        self.updated_sequence.emit((first_element, chirp_list))
+    def start_no_data_acquisition(self) -> None:
+        self.no_data_acquisition = True
+        self.info_signal.emit("Started No Data Acquisition Procs")
+
+    def create_new_config(self, first_element: ElementSequence, chirp_info_list: List[CreateLine]):
+        self.updated_sequence.emit((first_element, chirp_info_list))
         self.fmcw_custom.put(first_element)
         self.event_queue.put(EventsToHandle.NEW_SEQUENCE)
         self.event_passed.set()
@@ -246,30 +240,35 @@ class DataHandler(QObject):
         if the queue is congested, no choose and kill is done, instead it will just attempt to empty it ASAP 
         to prevent data skipping.
         """
-        count = 0
         while True:
             try:
-                data_value: TimeStampData = self.data_queue.get_nowait() 
-                self.current_data = data_value
-                if not count and data_value is not None:
-                    # just throw the data at matplotlib whenever it's done updating
-                    if self.waiting_for_data and self._sent_once:
-                        self._sent_once = False
-                    
-                    if self.waiting_for_data and not self._sent_once:
-                        current_time = time.time()
-                        if current_time - self._previous_redraw_time > 0.10:
-                            self.waiting_for_data = False
-                            self.update_matplotlib.emit(self.current_data)
-                            self._sent_once = True
-                            self._previous_redraw_time = current_time
-                
-                # this may be a problem as it is a bottleneck for retreiving data
-                if self.capture and data_value is not None:
-                    self.callback_function(data_value)
-
+                if not self.no_data_acquisition:
+                    data_value: TimeStampData = self.data_queue.get_nowait() 
+                    self.current_data = data_value
+                else:
+                    self.current_data = None
             except Empty:
                 break
+
+            if self.no_data_acquisition or data_value is not None:
+                self.handle_passing_data()
             
-            count += 1
+            # this may be a problem as it is a bottleneck for retreiving data
+            if self.capture and data_value is not None:
+                self.callback_function(data_value)
+                
+            if self.no_data_acquisition:
+                break
         
+    def handle_passing_data(self):
+        # just throw the data at matplotlib whenever it's done updating
+        if self.waiting_for_data and self._sent_once:
+            self._sent_once = False
+        
+        if self.waiting_for_data and not self._sent_once:
+            current_time = time.time()
+            if current_time - self._previous_redraw_time > 0.10:
+                self.waiting_for_data = False
+                self.update_matplotlib.emit(self.current_data)
+                self._sent_once = True
+                self._previous_redraw_time = current_time

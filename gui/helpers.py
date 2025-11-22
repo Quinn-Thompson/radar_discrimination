@@ -11,13 +11,13 @@ ModuleInfo = NamedTuple("ModuleInfo", [("module_path", Path), ("module_name", st
 
 _METHOD_FOLDER = Path("transformation_methods")
 
-_TRANSFORM_PATH = _METHOD_FOLDER / "transformations.py"
-_TRANSFORM_NAME = "Transformations"
-_TRANSFORM_INFO = ModuleInfo(_TRANSFORM_PATH, _TRANSFORM_NAME)
+_SINGLE_TRANSFORM_PATH = _METHOD_FOLDER / "single_frame_transforms.py"
+_SINGLE_TRANSFORM_NAME = "Single Frame Transforms"
+_SINGLE_TRANSFORM_INFO = ModuleInfo(_SINGLE_TRANSFORM_PATH, _SINGLE_TRANSFORM_NAME)
 
-_FEATURE_PATH = _METHOD_FOLDER / "features.py"
-_FEATURES_NAME = "Features"
-_FEATURES_INFO = ModuleInfo(_FEATURE_PATH, _FEATURES_NAME)
+_HISTORY_TRANSFORM_PATH = _METHOD_FOLDER / "frame_history_transforms.py"
+_HISTORY_FEATURES_NAME = "Frame History Transforms"
+_HISTORY_TRANSFORMS_INFO = ModuleInfo(_HISTORY_TRANSFORM_PATH, _HISTORY_FEATURES_NAME)
 
 _RECEIVER_COUNT = 3
 

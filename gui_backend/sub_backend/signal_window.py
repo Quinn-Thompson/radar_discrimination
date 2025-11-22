@@ -11,8 +11,6 @@ from gui_backend.helpers import WaveformSections, CreateLine
 from matplotlib.collections import LineCollection
 
 
-
-
 color_lookup = {
     WaveformSections.PLL_LOCK: (0.1, 0.1, 0.5),
     WaveformSections.INIT_0: (0.1, 0.2, 0.5),
@@ -31,15 +29,16 @@ color_lookup = {
 }
 
 
-
 class SignalWindowBackend():
-    """Manage data that goes between each back end."""
+    """Create The sequences to generate with the TCR."""
     
-    def __init__(self, main_window: MainWindow, sub_window: SignalWindow, data_handler: DataHandler):
-        """Initialize the wrapper with info from the main window gui.
+    def __init__(self, main_window: MainWindow, sub_window: SignalWindow, data_handler: DataHandler) -> None:
+        """Initialize teh backend info for the signal window.
 
         Args:
             main_window: The main gui window.
+            sub_window: The window this backend pertains to.
+            data_handler: The method for extracting data.
         """
         self.main_window = main_window
         self.data_handler = data_handler
@@ -54,74 +53,94 @@ class SignalWindowBackend():
         self.subplot.set_title("Signal", fontsize=10, pad=24, color="white")
         self.subplot.tick_params(axis='x', colors='white')
         self.subplot.tick_params(axis='y', colors='white')
-        self.chirp_list = None
+        self.chirp_info_list = None
         self.sub_window.action_window.widgets.send_to_device.clicked.connect(self.acquire_specified_config)
 
-    def acquire_specified_config(self):
+    def acquire_specified_config(self) -> None:
+        """Recreate the waveform and config using the gui items."""
         if self.sub_window.sub_element is None:
             return
         if self.sub_window.sub_element.label_name == Actions.Simple_Config.value:
-            first_element = self.simple_config(self.sub_window.sub_element)
+            first_element = self.recreate_simple_configuration(self.sub_window.sub_element)
         else:
-            first_element, _ = self.action_loop(self.sub_window.sub_element)
+            first_element, _ = self.loop_through_suquence(self.sub_window.sub_element)
         
         self.reconstruct_waveform(first_element)
-        self.data_handler.create_new_config(first_element, self.chirp_list)
+        self.data_handler.create_new_config(first_element, self.chirp_info_list)
         
-    def simple_config(self, action_first: ContainerLabel):
+    def recreate_simple_configuration(self, first_widget: ContainerLabel) -> ElementSequence:
+        """Create a simple configuration using loops and a chirp.
+
+        Args:
+            first_sequence: The first sequence within the gui.
+
+        Returns:
+            The simple sequence configuration.
+        """
         outer_loop = ElementSequence()
         outer_loop.loop = LoopValues()
         outer_loop.type = FmcwElementType.IFX_SEQ_LOOP
-        outer_loop.loop.repetition_time_s = action_first.values.frame_repetition_time_s
+        outer_loop.loop.repetition_time_s = first_widget.values.frame_repetition_time_s
         outer_loop.loop.num_repetitions = 0
         
         inner_loop = ElementSequence()
         inner_loop.loop = LoopValues()
         inner_loop.type = FmcwElementType.IFX_SEQ_LOOP
-        inner_loop.loop.repetition_time_s = action_first.values.chirp_repetition_time_s
-        inner_loop.loop.num_repetitions = action_first.values.num_chirps
+        inner_loop.loop.repetition_time_s = first_widget.values.chirp_repetition_time_s
+        inner_loop.loop.num_repetitions = first_widget.values.num_chirps
         outer_loop.loop.sub_sequence = inner_loop
 
         chirp = ElementSequence()
         chirp.type = FmcwElementType.IFX_SEQ_CHIRP
         chirp.chirp = ChirpValues()
-        chirp.chirp.setup_simple(action_first.values)
+        chirp.chirp.setup_simple(first_widget.values)
         chirp.chirp_sequence = 0
         inner_loop.loop.sub_sequence = chirp
         return outer_loop
         
-    def action_loop(self, action_first: ContainerLabel, chirp_sequence: int = 0) -> ElementSequence:
-        current_action = action_first
+    def loop_through_suquence(self, first_widget: ContainerLabel, chirp_sequence: int = 0) -> ElementSequence:
+        """Loop through the gui widgets to get the contained values to create a picklable object to pass through a queue.
+
+        Args:
+            action_first (ContainerLabel): _description_
+            chirp_sequence (int, optional): _description_. Defaults to 0.
+
+        Returns:
+            ElementSequence: _description_
+        """
+        current_widget = first_widget
         previous_element_sequence: Optional[ElementSequence] = None
         first_element_sequence: Optional[ElementSequence] = None
         
         while True:
             element_sequence = ElementSequence()
-            if previous_element_sequence is not None:
-                previous_element_sequence.next_element = element_sequence
-            if current_action.label_name == Actions.Chirp.value:
+
+            if current_widget.label_name == Actions.Chirp.value:
                 element_sequence.type = FmcwElementType.IFX_SEQ_CHIRP
-                element_sequence.chirp = current_action.values
+                element_sequence.chirp = current_widget.values
                 element_sequence.chirp_sequence = chirp_sequence
                 chirp_sequence += 1
-            elif current_action.label_name == Actions.Delay.value:
+            elif current_widget.label_name == Actions.Delay.value:
                 element_sequence.type = FmcwElementType.IFX_SEQ_DELAY
-                element_sequence.delay = current_action.values
-            elif current_action.label_name == Actions.Loop.value:
+                element_sequence.delay = current_widget.values
+            elif current_widget.label_name == Actions.Loop.value:
                 element_sequence.type = FmcwElementType.IFX_SEQ_LOOP
-                loop_sequence, chirp_sequence = self.action_loop(current_action.sub_element, chirp_sequence)
-                current_action.values.sub_sequence = loop_sequence
-                element_sequence.loop = current_action.values
+                loop_sequence, chirp_sequence = self.loop_through_suquence(current_widget.sub_element, chirp_sequence)
+                current_widget.values.sub_sequence = loop_sequence
+                element_sequence.loop = current_widget.values
+
+            if previous_element_sequence is not None:
+                previous_element_sequence.next_element = element_sequence
                 
-            if current_action == action_first:
+            if current_widget == first_widget:
                 first_element_sequence = element_sequence
             
-            if current_action.next_element is None:
+            if current_widget.next_element is None:
                 element_sequence.next_element = None
                 break
             
             previous_element_sequence = element_sequence
-            current_action = current_action.sub_element
+            current_widget = current_widget.next_element
         return first_element_sequence, chirp_sequence
 
     def create_signal(self, current_sequence: ElementSequence, movement_list: List[CreateLine]):
@@ -153,7 +172,7 @@ class SignalWindowBackend():
             current_movement_list.append(CreateLine(WaveformSections.PA_DELAY, WaveformSections.PA_DELAY.value, pre_pa_frequnecy, current_sequence.chirp.start_frequency_Hz))
             current_movement_list.append(CreateLine(WaveformSections.ADC_DELAY, WaveformSections.ADC_DELAY.value, current_sequence.chirp.start_frequency_Hz, pre_ramp_frequency, chirp=True))
             current_movement_list[-1].chirp_sequence = current_sequence.chirp_sequence
-            current_movement_list.append(CreateLine(WaveformSections.RAMP, ramp_time_period, pre_ramp_frequency, current_sequence.chirp.end_frequency_Hz, chirp=True))                        
+            current_movement_list.append(CreateLine(WaveformSections.RAMP, ramp_time_period - WaveformSections.ADC_DELAY.value, pre_ramp_frequency, current_sequence.chirp.end_frequency_Hz, chirp=True))                        
             current_movement_list[-1].chirp_sequence = current_sequence.chirp_sequence
             
             current_movement_list.append(CreateLine(WaveformSections.RAMP_END, WaveformSections.RAMP_END.value, current_sequence.chirp.end_frequency_Hz, end_ramp_frequency))
@@ -178,14 +197,14 @@ class SignalWindowBackend():
         movement_list: List[CreateLine] = []
 
         self.create_signal(first_sequence, movement_list)
-        self.chirp_list = []
+        self.chirp_info_list = []
         current_location = 0
         movement_coordinates_list = []
         colors = []
         for movement_item in movement_list:
             next_location = current_location + movement_item.duration
             if movement_item.chirp:
-                self.chirp_list.append(movement_item)
+                self.chirp_info_list.append(movement_item)
             if movement_item.name not in (WaveformSections.LOOP_TIME, WaveformSections.DELAY):
                 colors.append(color_lookup[movement_item.name])
                 movement_coordinates = [(current_location, movement_item.starting_frequency), (next_location, movement_item.ending_frequency)]

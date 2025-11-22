@@ -3,11 +3,11 @@ from gui.sub_widgets.view_transforms import ViewTransforms, AllChirpContainerWin
 from ifxradarsdk.fmcw.types import FmcwElementType
 from gui_backend.pull_data import DataHandler
 from gui_backend.helpers import Popup, ElementSequence, CreateLine
-from gui.helpers import ModuleInfo, _NO_METHOD, _TRANSFORM_NAME, _FEATURES_NAME, _FEATURES_INFO
+from gui.helpers import ModuleInfo, _NO_METHOD, _SINGLE_TRANSFORM_NAME, _HISTORY_FEATURES_NAME, _HISTORY_TRANSFORMS_INFO
 from PyQt6 import QtWidgets, QtCore
 import importlib
 import inspect
-from typing import List, Union, Optional, Dict
+from typing import List, Union, Optional, Dict, Callable
 from functools import partial
 import numpy as np
 import sys
@@ -22,10 +22,18 @@ from enum import Enum
 from queue import Empty
 import time
 
+class NoTransformNoAcquisitionError(Exception):
+    pass
+
+
+class MethodArgumentsError(Exception):
+    pass
+
+
 @dataclass
 class DataPacket:
     frame_data: Union[List[NDArray[np.float64]], NDArray[np.float64]]
-    chirp_list: List[CreateLine]
+    chirp_info_list: List[CreateLine]
     tab_to_update: str
 
 @dataclass
@@ -70,6 +78,41 @@ def new_methods(method_packets: List[MethodPacket], modules: Dict[ModuleInfo, Mo
         sys.modules[method_packet.module_info.module_name] = modules[method_packet.module_info.module_name]
         spec.loader.exec_module(modules[method_packet.module_info.module_name])
 
+def different_method_calls(
+    method_call: Callable, 
+    to_transform_data: Optional[Union[List[NDArray[np.float64]], List[List[NDArray[np.float64]]]]], 
+    chirp_info_list: List[CreateLine]
+) -> List[NDArray[np.float64]]:
+    """Method to attempt many different method calls to see which work.
+
+    Args:
+        method_call: The method to attempt to call.
+        transformed_data: The data to transform.
+        chirp_info_list: The info to recreate the chirp.
+    """
+    argument_options = [
+
+        {"frame_list": to_transform_data, "chirp_info_list": chirp_info_list},
+        {"frame_history": to_transform_data, "chirp_info_list": chirp_info_list},
+        {"frame_list": to_transform_data},
+        {"frame_history": to_transform_data},
+        {"chirp_info_list": chirp_info_list},
+        [to_transform_data, chirp_info_list],
+        [to_transform_data],
+    ]
+
+    for attempted_arguments in argument_options:
+        try:
+            if isinstance(attempted_arguments, list):
+                transformed_data = method_call(*attempted_arguments)
+            else:
+                transformed_data = method_call(**attempted_arguments)
+            return transformed_data
+        except TypeError:
+            continue
+    else:
+        raise MethodArgumentsError("Method arguments failed to pass Typing.")
+
 def handle_methods(
     data_packet: DataPacket, 
     method_packets: List[MethodPacket], 
@@ -88,28 +131,33 @@ def handle_methods(
         A list (each chirp sequence) of frames (receiver, chirp per frame, sample per chirp)
     """
     transformed_data = data_packet.frame_data
-    if data_packet.tab_to_update not in data_list: 
+    if data_packet.tab_to_update not in data_list and transformed_data is not None: 
         data_list[data_packet.tab_to_update] = []
     
     for method_packet in method_packets:
-        if method_packet.module_info.module_name == _TRANSFORM_NAME:
+        # Single Data Transform
+        if method_packet.module_info.module_name == _SINGLE_TRANSFORM_NAME:
             if method_packet.method_name == _NO_METHOD:
+                if transformed_data is None:
+                    raise NoTransformNoAcquisitionError("Value must be transformed if there is no acquisition to display")
+                
                 if not isinstance(data_packet.frame_data, list):
                     transformed_data = [transformed_data]
             else:
                 transform_method = getattr(modules[method_packet.module_info.module_name], method_packet.method_name)
-                if not isinstance(data_packet.frame_data, list):
-                    transformed_data = transform_method([transformed_data], data_packet.chirp_list)
+                if not isinstance(data_packet.frame_data, list) and transformed_data is not None:
+                    transformed_data = different_method_calls(transform_method, [transformed_data], data_packet.chirp_info_list)
                 else:
-                    transformed_data = transform_method(transformed_data, data_packet.chirp_list)
+                    transformed_data = different_method_calls(transform_method, transformed_data, data_packet.chirp_info_list)
 
-        if method_packet.module_info.module_name == _FEATURES_NAME:
+        # Data Transform With History
+        if method_packet.module_info.module_name == _HISTORY_FEATURES_NAME:
             if method_packet.method_name != _NO_METHOD:
                 if len(data_list[data_packet.tab_to_update]) > 100:
                     data_list[data_packet.tab_to_update].pop(0)
                 data_list[data_packet.tab_to_update].append(transformed_data)
                 feature_method = getattr(modules[method_packet.module_info.module_name], method_packet.method_name)
-                transformed_data = feature_method(data_list[data_packet.tab_to_update], data_packet.chirp_list)
+                transformed_data = different_method_calls(feature_method, data_list[data_packet.tab_to_update], data_packet.chirp_info_list)
             else:
                 data_list[data_packet.tab_to_update] = [transformed_data]
 
@@ -181,9 +229,9 @@ class ViewTransformsBackend:
         self.methods: Dict[ModuleInfo, str] = {}
         self.data_list: List[List[NDArray[np.float64]]] = []
         self.current_number_of_views = 0
-        self.chirp_list = None
+        self.chirp_info_list = None
         self.modules: Dict[ModuleInfo, ModuleType] = {}
-        self.current_data = {}
+        self.current_data: Dict[AllChirpContainerWindow, List[NDArray[np.float64]]] = {}
         self.pass_in_queue = mp.Queue()
         self.event_queue = mp.Queue()
         self.transform_queue = mp.Queue()
@@ -198,8 +246,10 @@ class ViewTransformsBackend:
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.check_arbitrary_run_request)
         self.timer.start(16)
-        self.finished_arbitrary_queues = True
+        self.caught_up_on_packets = False
         self.packets_in_flight = 0
+        
+        self.wait_for_packets = False
     
     def connect_widgets(self, new_tab: AllChirpContainerWindow):
         """When a new tab is created, connect the sub widgets to their perspective calls.
@@ -215,7 +265,7 @@ class ViewTransformsBackend:
         ))
         new_tab.widgets.graph_type.combo_box.currentTextChanged.connect(partial(self.update_graph_type, new_tab))
         for method_dropdown in new_tab.widgets.method_dropdowns.values():
-            method_dropdown.combo_box.currentTextChanged.connect(partial(self.update_graph_type, new_tab))
+            method_dropdown.combo_box.currentTextChanged.connect(self.reset_view)
 
     def load_all_files(self, new_tab: AllChirpContainerWindow):
         """Load the methods from the arbitrary code execution files.
@@ -247,7 +297,9 @@ class ViewTransformsBackend:
         sys.modules[module_info.module_name] = self.modules[module_info.module_name]
         spec.loader.exec_module(self.modules[module_info.module_name])
         
-        self.methods[module_info.module_name] = [name for name, _ in inspect.getmembers(self.modules[module_info.module_name], inspect.isfunction) if not name.startswith("_")]
+        self.methods[module_info.module_name] = [
+            name for name, _ in inspect.getmembers(self.modules[module_info.module_name], inspect.isfunction) if name.startswith("t_")
+        ]
         dropdown.clear()
         dropdown.addItem(_NO_METHOD)
         dropdown.addItems(self.methods[module_info.module_name])
@@ -271,7 +323,7 @@ class ViewTransformsBackend:
     def send_arbitrary_run_request(
         self, 
         tab_to_run: AllChirpContainerWindow, 
-        data: Union[List[NDArray[np.float64]], NDArray[np.float64]],
+        data: Optional[Union[List[NDArray[np.float64]], NDArray[np.float64]]],
         check_visibility: bool = True
     ):
         """Run the arbitrary code from the loaded methods.
@@ -285,68 +337,89 @@ class ViewTransformsBackend:
         all_data_group = False
         for method_type, dropdown in tab_to_run.widgets.method_dropdowns.items():
             method_packets.append(MethodPacket(method_type, dropdown.getInnerText()))
-            if method_type == _FEATURES_INFO and method_packets[-1].method_name != _NO_METHOD:
+            if method_type == _HISTORY_TRANSFORMS_INFO and method_packets[-1].method_name != _NO_METHOD:
                 all_data_group = True
                 
         if check_visibility and (not tab_to_run.isVisible() and not all_data_group):
             return 
-        data_packet = DataPacket(data, self.chirp_list, tab_to_run.identification)
+        data_packet = DataPacket(data, self.chirp_info_list, tab_to_run.identification)
         self.pass_in_queue.put(PassInPacket(data_packet, method_packets))
         self.event_queue.put(DataEventsToHandle.NEW_DATA)
 
     def check_arbitrary_run_request(self):
         """Poll the transform queue to see if new data has been transformed."""
+        
         try:
             passback_packet: PassbackPacket = self.transform_queue.get_nowait()
-            
-            if passback_packet.error is not None:
-                self.data_handler.stop_acquisition()
-                self.packets_in_flight = 0
-                self.clear_data()
-                # self.main_window.timeout_label.setText(f"{file_name} Line {line_number}: {exception}")
-                self.pop_up = Popup(passback_packet.error)
-                self.pop_up.launch()
-            else:
-                self.packets_in_flight -= 1
-                tab_to_run = self.sub_window.seperate_viewer_tabs.view_tabs[passback_packet.tab_to_update]
-                self.handle_graphs(tab_to_run, passback_packet.transformed_data)
-                self.current_data[tab_to_run] = passback_packet.transformed_data
+            self.packets_in_flight -= 1
+            # if we are not waiting for the data being sent to empty
+            if not self.wait_for_packets:
+                if passback_packet.error is not None:
+                    self.data_handler.stop_acquisition()
+                    self.pop_up = Popup(passback_packet.error)
+                    self.pop_up.launch()
+                    self.wait_for_packets = True
+                else:
+                    tab_to_run = self.sub_window.seperate_viewer_tabs.view_tabs[passback_packet.tab_to_update]
+                    self.handle_graphs(tab_to_run, passback_packet.transformed_data)
+                    self.current_data[tab_to_run] = passback_packet.transformed_data
 
         except Empty:
             if not self.packets_in_flight:
                 self.data_handler.waiting_for_data = True
+                
+                if self.wait_for_packets:
+                    self.wait_for_packets = False
+                    self.clear_data()
+                    # self.main_window.timeout_label.setText(f"{file_name} Line {line_number}: {exception}")
 
-    def create_new_chirp_views(self, first_element: ElementSequence, chirp_list: List[CreateLine]):
+
+    def create_new_chirp_views(self, first_element: ElementSequence, chirp_info_list: List[CreateLine]):
         """Create new tabs for when the data has a new shape or when a new tab is added.
 
         Args:
             first_element: Unused.
-            chirp_list: A list of objects storing the start and ned frequency of the chirps and their duration.
+            chirp_info_list: A list of objects storing the start and ned frequency of the chirps and their duration.
         """
-        self.chirp_list = chirp_list
+        self.chirp_info_list = chirp_info_list
         for view_tab in self.sub_window.seperate_viewer_tabs.view_tabs.values():
             view_tab.add_new_views(self.current_number_of_views)
             view_tab.update_graph_type(view_tab.widgets.graph_type.combo_box.currentText())
     
-    def iterate_through_each_view_tab(self, chirp_frames: Union[List[NDArray[np.float64]], NDArray[np.float64]]):
+    def iterate_through_each_view_tab(self, chirp_frames: Optional[Union[List[NDArray[np.float64]], NDArray[np.float64]]]):
         """Iterate through all tabs within the window.
 
         Args:
             chirp_frames: The list of chirp frames to transform.
         """
-        self.finished_arbitrary_queues = False
-        for view_tab in self.sub_window.seperate_viewer_tabs.view_tabs.values():
-            self.packets_in_flight += 1
+        view_tabs = self.sub_window.seperate_viewer_tabs.view_tabs.values()
+        self.packets_in_flight = len(view_tabs)
+        for view_tab in view_tabs:
             self.send_arbitrary_run_request(view_tab, chirp_frames)
         
-    def update_graph_type(self, tab_to_run: AllChirpContainerWindow):
+    def update_graph_type(self, tab_to_run: AllChirpContainerWindow) -> None:
+        tab_to_run.update_graph_type(tab_to_run.widgets.graph_type.combo_box.currentText())
+        if tab_to_run in self.current_data:
+            tab_to_run.setup_new_sub_plots(self.current_data[tab_to_run])
+    
+    def reset_view(self) -> None:
+        """Reset the data within the other process. 
+
+        Args:
+            tab_to_run: The tab to update the view of.
+        """
         self.timer.stop()
         self.empty_queues.wait()
         self.clear_data()
-        tab_to_run.update_graph_type(tab_to_run.widgets.graph_type.combo_box.currentText())
         self.timer.start()
 
-    def handle_graphs(self, tab_to_run: AllChirpContainerWindow, transformed_data: List[NDArray[np.float64]]):
+    def handle_graphs(self, tab_to_run: AllChirpContainerWindow, transformed_data: List[NDArray[np.float64]]) -> None:
+        """Manage updating the graphs dependant on the shape of the data.
+
+        Args:
+            tab_to_run: The tab to update the data in.
+            transformed_data: The data that has been transformed.
+        """
         try:
             if tab_to_run in self.current_data:
                 if len(transformed_data) != len(self.current_data[tab_to_run]):
@@ -367,6 +440,7 @@ class ViewTransformsBackend:
             tab_to_run.update_views(transformed_data)
 
         except (ValueError, TypeError) as exception:
+            self.wait_for_packets = True
             self.data_handler.stop_acquisition()
             traceback_object = exception.__traceback__
             while traceback_object.tb_next:
@@ -378,5 +452,3 @@ class ViewTransformsBackend:
             pop_up_string = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
             self.pop_up = Popup(pop_up_string)
             self.pop_up.launch()
-
-            return None

@@ -4,10 +4,18 @@ from typing import Optional
 from ifxradarsdk.fmcw.types import FmcwElementType
 from PyQt6 import QtWidgets, QtCore
 import numpy as np
+from numpy.typing import NDArray
 from enum import Enum
+from dataclasses import dataclass
 
 _RECEIVER_COUNT = 3
 
+
+@dataclass
+class TimeStampData():
+    """Numpy data that has a time stamp."""
+    time_stamp: float
+    data: NDArray[np.float64]
 
 class EventsToHandle(Enum):
     NEW_SEQUENCE = 0
@@ -44,11 +52,11 @@ class CreateLine():
         if chirp:
             self.chirp_sequence = 0
     
-    def enact_movement(self, total_size: int, total_duration: Optional[float] = None):
+    def enact_movement(self, total_size: int, total_duration: Optional[float] = None, end_point: bool = False):
         if total_duration is None:
             total_duration = self.duration
         sub_space = int(round((self.duration / total_duration) * total_size))
-        return np.linspace(self.starting_frequency, self.ending_frequency, sub_space)
+        return np.linspace(self.starting_frequency, self.ending_frequency, sub_space, endpoint=end_point)
 
 class Popup(QtWidgets.QDialog):
     def __init__(self, string_to_display: str):

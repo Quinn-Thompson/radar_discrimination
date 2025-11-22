@@ -6,7 +6,7 @@ from gui.helpers import WindowWidgets
 from typing import List, Optional, Iterable, Union, NamedTuple, Dict
 from functools import partial
 import pyqtgraph as pg
-from gui.helpers import _RECEIVER_COUNT, background_color, _FEATURES_INFO, _TRANSFORM_INFO, ComboBoxWithText, _NO_METHOD
+from gui.helpers import _RECEIVER_COUNT, background_color, _HISTORY_TRANSFORMS_INFO, _SINGLE_TRANSFORM_INFO, ComboBoxWithText, _NO_METHOD
 from numpy.typing import NDArray
 import numpy as np
 import time
@@ -26,13 +26,14 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
         # Set global background
         pg.setConfigOption("background", background_color)
         pg.setConfigOption("foreground", "w")
-
         self.plots: List[pg.PlotItem] = []
         self.sub_plots: List[pg.ImageItem, List[pg.PlotCurveItem]] = []
-        self.current_boundaries = Boundaries(minimum=float("-inf"), maximum=float("inf"))
-        
         self.graph_type: Optional[GraphTypes] = None
-        for receiver in range(1, _RECEIVER_COUNT + 1):
+
+
+    def setup_plots(self, plot_count: int):
+        self.current_boundaries = Boundaries(minimum=float("-inf"), maximum=float("inf"))
+        for receiver in range(1, plot_count + 1):
 
             subplot = self.ci.addPlot(title=f"Receiver {receiver}")
             # subplot.getViewBox().disableAutoRange(axis='y')
@@ -76,31 +77,49 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
                 sub_plot.setImage(np.real(transformed_data[receiver]))
                 sub_plot.setRect(QtCore.QRectF(0, 0, 300, 300))
 
-                
             elif self.graph_type == GraphTypes.plot_2d.value:
                 if changed_boundaries:
                         plot.setYRange(self.current_boundaries.minimum, self.current_boundaries.maximum)
-                if len(transformed_data[receiver].shape) > 1:
-                    for plot_index, line_plot in enumerate(self.sub_plots[receiver]):
-                        # print(transformed_data.shape)
+                for plot_index, line_plot in enumerate(sub_plot):
+                    # print(transformed_data.shape)
+                    if len(transformed_data.shape) == 3:
                         line_plot.setData(np.real(transformed_data[receiver][plot_index]))
+                    elif len(transformed_data.shape) == 2:
+                        line_plot.setData(np.real(transformed_data[plot_index]))
+                    else:
+                        line_plot.setData(np.real(transformed_data))
+                        
 
+                    
     def clear_graph(self):
-        for sub_plot in self.plots:
-            sub_plot.clear()
-            self.sub_plots = []
+        for plot in self.plots:
+            self.ci.removeItem(plot)
+            
+        
+        self.plots = []
+        self.sub_plots = []
+        self.ci.update()
             
     def graphs_change(self, dummy_transformed_data: NDArray[np.float64]):
         self.clear_graph()
+        dummy_size = len(dummy_transformed_data.shape)
+        if dummy_size == 3:
+            plot_count = dummy_transformed_data.shape[0]
+        elif dummy_size == 2:
+            plot_count = 1
+        else:
+            plot_count = 1
+        
+        self.setup_plots(plot_count)
         for receiver, plot in enumerate(self.plots):
             if self.graph_type == GraphTypes.colormesh.value:
                 image_item = pg.ImageItem()
                 plot.addItem(image_item)
                 self.sub_plots.append(image_item)
             else:
-                if len(dummy_transformed_data[receiver].shape) > 1:
+                if dummy_size > 1:
                     lines = []
-                    for _ in range(dummy_transformed_data[receiver].shape[0]):
+                    for _ in range(dummy_transformed_data.shape[dummy_size-2]):
                         line_plot = plot.plot()
                         lines.append(line_plot)
                     self.sub_plots.append(lines)
@@ -126,8 +145,8 @@ class AllChirpContainerWidget(WindowWidgets):
         """Initialize each widget within the window.
         """
         self.method_dropdowns = {
-            _TRANSFORM_INFO: ComboBoxWithText(_TRANSFORM_INFO.module_name, [_NO_METHOD]),
-            _FEATURES_INFO: ComboBoxWithText(_FEATURES_INFO.module_name, [_NO_METHOD]),
+            _SINGLE_TRANSFORM_INFO: ComboBoxWithText(_SINGLE_TRANSFORM_INFO.module_name, [_NO_METHOD]),
+            _HISTORY_TRANSFORMS_INFO: ComboBoxWithText(_HISTORY_TRANSFORMS_INFO.module_name, [_NO_METHOD]),
         }
         self.graph_type = ComboBoxWithText("Graph Type", [graph_type.value for graph_type in GraphTypes])
         self.refresh = QtWidgets.QPushButton()
@@ -162,13 +181,13 @@ class AllChirpContainerWindow(QtWidgets.QFrame):
         )
         
         self.method_layout.addWidget(
-            self.widgets.method_dropdowns[_TRANSFORM_INFO],
+            self.widgets.method_dropdowns[_SINGLE_TRANSFORM_INFO],
             0, 
             0,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
         self.method_layout.addWidget(
-            self.widgets.method_dropdowns[_FEATURES_INFO],
+            self.widgets.method_dropdowns[_HISTORY_TRANSFORMS_INFO],
             0, 
             1,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
@@ -218,9 +237,11 @@ class AllChirpContainerWindow(QtWidgets.QFrame):
 
 
 class AddTab(QtWidgets.QTabWidget):
+    """The tab bar that has a dedicated tab for adding more tabs."""
     added_new_tab = QtCore.pyqtSignal(object)
     
     def __init__(self):
+        """Initialize the tab and define some behavior."""
         self._unique_tab_names = 0
         super().__init__()
 
@@ -231,12 +252,16 @@ class AddTab(QtWidgets.QTabWidget):
         self.view_tabs: Dict[str, AllChirpContainerWindow] = {}
         self.all_chirps = None
 
-    def handle_tab_click(self, index):
+    def handle_tab_click(self, index: int):
+        """Event for when a tab is clicked on. If it is the rightmost, add a new tab.
+        
+        Args:
+            index: The index for the tab that was pressed
+        """
         if index == self.count() - 1:
             self.create_new_tab()
 
     def create_new_tab(self):
-        print(f"New tab {time.time()}")
         self._unique_tab_names += 1
         self.view_tabs[str(self._unique_tab_names)] = AllChirpContainerWindow(str(self._unique_tab_names))
         self.root_layoutH = QtWidgets.QHBoxLayout()
