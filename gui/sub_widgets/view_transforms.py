@@ -29,7 +29,7 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
         self.plots: List[pg.PlotItem] = []
         self.sub_plots: List[pg.ImageItem, List[pg.PlotCurveItem]] = []
         self.graph_type: Optional[GraphTypes] = None
-
+        self.current_boundaries = Boundaries(minimum=float("-inf"), maximum=float("inf"))
 
     def setup_plots(self, plot_count: int):
         self.current_boundaries = Boundaries(minimum=float("-inf"), maximum=float("inf"))

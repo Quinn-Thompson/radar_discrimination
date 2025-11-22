@@ -184,7 +184,7 @@ def run_arbitrary_code(
                 event = event_queue.get(timeout=0.05)
                 empty_queues.clear()
                 if event == DataEventsToHandle.NEW_DATA:
-                    pass_in_data: PassInPacket = pass_in_queue.get_nowait()
+                    pass_in_data: PassInPacket = pass_in_queue.get(timeout=0.05)
 
                     feature_data = handle_methods(pass_in_data.data_packet, pass_in_data.method_packets, modules, data_list)
                     transformed_data_queue.put(PassbackPacket(feature_data, pass_in_data.data_packet.tab_to_update))
@@ -212,10 +212,8 @@ def run_arbitrary_code(
 
 class ViewTransformsBackend(QtCore.QObject):
     """Visualize the transforms provided from methods in another file."""
-    raised_error = QtCore.pyqtSignal()
-    no_packets_in_flight = QtCore.pyqtSignal()
     
-    def __init__(self, main_window: MainWindow, sub_window: ViewTransforms):
+    def __init__(self, main_window: MainWindow, sub_window: ViewTransforms, callback_raised_error: Callable, callback_no_packets_in_flight: Callable):
         """Initialize the elements and events for the view transforms window.
         
         Args:
@@ -250,6 +248,9 @@ class ViewTransformsBackend(QtCore.QObject):
         self.packets_in_flight = 0
         
         self.wait_for_packets = False
+        
+        self.callback_raised_error = callback_raised_error
+        self.callback_no_packets_in_flight = callback_no_packets_in_flight
     
     def connect_widgets(self, new_tab: AllChirpContainerWindow):
         """When a new tab is created, connect the sub widgets to their perspective calls.
@@ -341,6 +342,7 @@ class ViewTransformsBackend(QtCore.QObject):
                 all_data_group = True
                 
         if check_visibility and (not tab_to_run.isVisible() and not all_data_group):
+            self.packets_in_flight -= 1
             return 
         data_packet = DataPacket(data, self.chirp_info_list, tab_to_run.identification)
         self.pass_in_queue.put(PassInPacket(data_packet, method_packets))
@@ -350,12 +352,12 @@ class ViewTransformsBackend(QtCore.QObject):
         """Poll the transform queue to see if new data has been transformed."""
         
         try:
-            passback_packet: PassbackPacket = self.transform_queue.get_nowait()
+            passback_packet: PassbackPacket = self.transform_queue.get(timeout=0.05)
             self.packets_in_flight -= 1
             # if we are not waiting for the data being sent to empty
             if not self.wait_for_packets:
                 if passback_packet.error is not None:
-                    self.raised_error.emit()
+                    self.callback_raised_error()
                     self.pop_up = Popup(passback_packet.error)
                     self.pop_up.launch()
                     self.wait_for_packets = True
@@ -366,7 +368,7 @@ class ViewTransformsBackend(QtCore.QObject):
 
         except Empty:
             if not self.packets_in_flight:
-                self.no_packets_in_flight.emit()
+                self.callback_no_packets_in_flight()
                 if self.wait_for_packets:
                     self.wait_for_packets = False
                     self.clear_data()
@@ -440,7 +442,7 @@ class ViewTransformsBackend(QtCore.QObject):
 
         except (ValueError, TypeError) as exception:
             self.wait_for_packets = True
-            self.raised_error.emit()
+            self.callback_raised_error()
             traceback_object = exception.__traceback__
             while traceback_object.tb_next:
                 traceback_object = traceback_object.tb_next

@@ -30,9 +30,12 @@ class CaptureBackend(QtCore.QObject):
         self.main_window = main_window
         self.data_handler = data_handler
         self.sub_window = sub_window
-        self.transforms_backend = ViewTransformsBackend(self.main_window, self.sub_window.view_transforms_window)
-        self.transforms_backend.raised_error.connect(self.data_handler.stop_acquisition)
-        self.transforms_backend.no_packets_in_flight.connect(self.send_out_next_frame, QtCore.Qt.ConnectionType.QueuedConnection)
+        self.transforms_backend = ViewTransformsBackend(
+            self.main_window, 
+            self.sub_window.view_transforms_window,
+            self.data_handler.stop_acquisition,
+            self.send_out_next_frame
+        )
         sub_window.widgets.capture_button_frames.clicked.connect(self.capture_x_frames)
         sub_window.widgets.capture_button_time.clicked.connect(self.capture_for_x_time)
         sub_window.widgets.save_button.clicked.connect(self.find_location_to_save)
