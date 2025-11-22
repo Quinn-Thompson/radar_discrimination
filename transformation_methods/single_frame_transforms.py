@@ -1,11 +1,17 @@
 """This file is used for arbitrary code execution. The method names are taken and run based on a QComboBox selection.
 
-The methods without _'s at the beginning will be added to the method list to run.
+The methods without t_ at teh beginning will not be seen
 
 These methods will be passed a list of every frame (one for each chirp sequence) and a list of objects 
-containing the start and end frequencies and durations of every chirp and their respective sequence
+containing the start and end frequencies and durations of every chirp and their respective sequence.
 
-This MUST be a shape list(np.array(shape=(X, Y, Z)))
+The arguments are passed in as either kwargs or args, if args because of distinct method argument names, it is the frames first then the chirp list.
+otherwise it will just be assigned to frame_list and chirp_info_list.
+
+The return MUST be of type list(np.array(X)), otherwise a popup will appear.
+
+Currently line plots can handle 3 axis, 2 axis and 1 axis data.
+color meshes should be able to handle 3 axis and 2 axis data.
 """
 import numpy as np
 from numpy.typing import NDArray
