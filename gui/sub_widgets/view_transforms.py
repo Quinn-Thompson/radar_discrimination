@@ -1,5 +1,5 @@
 """The window for displaying the bloch spheres."""
-from PyQt6 import QtWidgets
+from PyQt6 import QtWidgets, QtGui
 from PyQt6 import QtCore
 from enum import Enum
 from gui.helpers import WindowWidgets
@@ -18,11 +18,10 @@ class GraphTypes(Enum):
     plot_2d = "2D Plot"
     colormesh = "Color Mesh"
 
-
 class ReceiverPlots(pg.GraphicsLayoutWidget):
     def __init__(self):
         super().__init__()
-
+        self.glyph_cache = self.create_glyph_cache()
         # Set global background
         pg.setConfigOption("background", background_color)
         pg.setConfigOption("foreground", "w")
@@ -30,6 +29,34 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
         self.sub_plots: List[pg.ImageItem, List[pg.PlotCurveItem]] = []
         self.graph_type: Optional[GraphTypes] = None
         self.current_boundaries = Boundaries(minimum=float("-inf"), maximum=float("inf"))
+
+    def create_glyph_cache(self, font_name: str = "Monospace", font_size: int = 12, chars: Optional[List[str]] = None):
+        if chars is None:
+            chars = [chr(i) for i in range(32, 127)]
+
+        glyph_cache = {}
+        font = QtGui.QFont(font_name)
+        font.setPointSize(font_size)
+
+        for c in chars:
+            # create a small image just big enough for one character
+            image = QtGui.QImage(font_size*2, font_size*2, QtGui.QImage.Format.Format_ARGB32)
+            image.fill(QtGui.QColor(0, 0, 0, 0))
+            painter = QtGui.QPainter(image)
+            painter.setFont(font)
+            painter.setPen(QtGui.QColor(255, 255, 255))
+            painter.drawText(0, font_size, c)
+            painter.end()
+
+            # convert to numpy array if you want to manipulate with numpy
+            ptr = image.bits()
+            ptr.setsize(image.width() * image.height() * image.depth() // 8)
+
+            arr = np.rot90(np.array(ptr).reshape((image.height(), image.width(), 4)), k = 3)
+            glyph_cache[c] = arr
+
+        return glyph_cache
+
 
     def setup_plots(self, plot_count: int):
         self.current_boundaries = Boundaries(minimum=float("-inf"), maximum=float("inf"))
@@ -50,31 +77,52 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
 
             self.ci.nextCol()
     
+    def text_array_to_qimage(self, transformed_data: NDArray[np.str_]):
+        cell_size = 30
+        rows, columns = transformed_data.shape
+        image = np.zeros((columns * int(transformed_data.dtype.str[2:]) * cell_size, rows * cell_size, 4))
+
+        for row_index, row in enumerate(transformed_data):
+            for column_index, column in enumerate(row):
+                for character_index, character in enumerate(column):
+                    glyph = self.glyph_cache.get(character, self.glyph_cache[' '])  # fallback to space
+                    height, width = glyph.shape[:2]
+                    start_column_location = (len(column) * column_index + character_index)*cell_size
+                    end_column_location = (len(column) * column_index + character_index)*cell_size+width
+                    image[start_column_location:end_column_location, row_index*cell_size:row_index*cell_size+height] = glyph
+
+        return image
+
     def update_plot(self, transformed_data: NDArray[np.float64]):
         max_value = 0.0
         min_value = float("inf")
 
-        data_max = np.max(transformed_data)
-        data_min = np.min(transformed_data)
-        if data_max > max_value:
-            max_value = data_max
-        if data_min < min_value:
-            min_value = data_min
-        changed_boundaries = False        
-        if (
-            min_value < self.current_boundaries.minimum 
-            or min_value > self.current_boundaries.minimum + (max_value * 0.6)
-            or max_value > self.current_boundaries.maximum 
-            or max_value < self.current_boundaries.maximum - (max_value * 0.6)
-        ):
-            changed_boundaries = True
-            self.current_boundaries = Boundaries(min_value - (max_value * 0.3), max_value + (max_value * 0.3))
+        if self.graph_type == GraphTypes.plot_2d.value:
+            data_max = np.max(transformed_data)
+            data_min = np.min(transformed_data)
+            if data_max > max_value:
+                max_value = data_max
+            if data_min < min_value:
+                min_value = data_min
+            changed_boundaries = False        
+            if (
+                min_value < self.current_boundaries.minimum 
+                or min_value > self.current_boundaries.minimum + (max_value * 0.6)
+                or max_value > self.current_boundaries.maximum 
+                or max_value < self.current_boundaries.maximum - (max_value * 0.6)
+            ):
+                changed_boundaries = True
+                self.current_boundaries = Boundaries(min_value - (max_value * 0.3), max_value + (max_value * 0.3))
             
         for receiver, (sub_plot, plot) in enumerate(zip(self.sub_plots, self.plots)):
             if self.graph_type == GraphTypes.colormesh.value:
                 # if changed_boundaries:
                 #     sub_plot.setLevels([self.current_boundaries.minimum, self.current_boundaries.maximum])
-                sub_plot.setImage(np.real(transformed_data[receiver]))
+                if transformed_data.dtype == np.str_ or transformed_data.dtype.str.startswith("<U"):
+                    to_set_image = self.text_array_to_qimage(transformed_data)
+                else:
+                    to_set_image = np.real(transformed_data[receiver])
+                sub_plot.setImage(to_set_image)
                 sub_plot.setRect(QtCore.QRectF(0, 0, 300, 300))
 
             elif self.graph_type == GraphTypes.plot_2d.value:

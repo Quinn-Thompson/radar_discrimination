@@ -352,7 +352,7 @@ class ViewTransformsBackend(QtCore.QObject):
         """Poll the transform queue to see if new data has been transformed."""
         
         try:
-            passback_packet: PassbackPacket = self.transform_queue.get(timeout=0.05)
+            passback_packet: PassbackPacket = self.transform_queue.get_nowait()
             self.packets_in_flight -= 1
             # if we are not waiting for the data being sent to empty
             if not self.wait_for_packets:

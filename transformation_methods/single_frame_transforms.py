@@ -114,3 +114,7 @@ def t_collapse_list(frame_list: List[NDArray[np.float64]]):
 def t_view_sent_signal(chirp_info_list: List[CreateLine]):
     chirp_recreator = RecreateChirp(chirp_info_list, 60)
     return chirp_recreator.recreate_single_chirp()
+
+def t_view_text(chirp_info_list: List[CreateLine]):
+    my_text = [["test11", "test12"], ["test21", "test22"]]
+    return [np.array(my_text)]
