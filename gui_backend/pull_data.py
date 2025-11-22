@@ -21,6 +21,7 @@ class_registry: Dict[str, ifxStructure] = {
 
 _CONFIG_DIR = Path("config")
 _CONFIG_PATH = _CONFIG_DIR / "device_configs.json"
+_POLL_DATA_MAX = 10
 
 def create_sequence_from_object(first_action: ElementSequence) -> FmcwSequenceElement:
     element = FmcwSequenceElement()
@@ -240,7 +241,7 @@ class DataHandler(QObject):
         if the queue is congested, no choose and kill is done, instead it will just attempt to empty it ASAP 
         to prevent data skipping.
         """
-        while True:
+        for _ in range(_POLL_DATA_MAX):
             try:
                 if not self.no_data_acquisition:
                     data_value: TimeStampData = self.data_queue.get_nowait() 

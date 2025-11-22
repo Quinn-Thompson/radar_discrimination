@@ -210,22 +210,23 @@ def run_arbitrary_code(
             transformed_data_queue.put(PassbackPacket(None, None, pop_up_string))
 
 
-class ViewTransformsBackend:
+class ViewTransformsBackend(QtCore.QObject):
     """Visualize the transforms provided from methods in another file."""
+    raised_error = QtCore.pyqtSignal()
+    no_packets_in_flight = QtCore.pyqtSignal()
     
-    def __init__(self, main_window: MainWindow, sub_window: ViewTransforms, data_handler: DataHandler):
+    def __init__(self, main_window: MainWindow, sub_window: ViewTransforms):
         """Initialize the elements and events for the view transforms window.
         
         Args:
             main_window: The main gui window.
             sub_window: The window this backend is supporting.
         """
-        self.data_handler = data_handler
+        super().__init__()
         self.main_window = main_window
         self.sub_window = sub_window
         self.sub_window.seperate_viewer_tabs.added_new_tab.connect(lambda new_tab: self.connect_widgets(new_tab))
 
-        self.data_handler.updated_sequence.connect(lambda chirp_info: self.create_new_chirp_views(*chirp_info))
         self.methods: Dict[ModuleInfo, str] = {}
         self.data_list: List[List[NDArray[np.float64]]] = []
         self.current_number_of_views = 0
@@ -246,7 +247,6 @@ class ViewTransformsBackend:
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.check_arbitrary_run_request)
         self.timer.start(16)
-        self.caught_up_on_packets = False
         self.packets_in_flight = 0
         
         self.wait_for_packets = False
@@ -355,7 +355,7 @@ class ViewTransformsBackend:
             # if we are not waiting for the data being sent to empty
             if not self.wait_for_packets:
                 if passback_packet.error is not None:
-                    self.data_handler.stop_acquisition()
+                    self.raised_error.emit()
                     self.pop_up = Popup(passback_packet.error)
                     self.pop_up.launch()
                     self.wait_for_packets = True
@@ -366,8 +366,7 @@ class ViewTransformsBackend:
 
         except Empty:
             if not self.packets_in_flight:
-                self.data_handler.waiting_for_data = True
-                
+                self.no_packets_in_flight.emit()
                 if self.wait_for_packets:
                     self.wait_for_packets = False
                     self.clear_data()
@@ -441,7 +440,7 @@ class ViewTransformsBackend:
 
         except (ValueError, TypeError) as exception:
             self.wait_for_packets = True
-            self.data_handler.stop_acquisition()
+            self.raised_error.emit()
             traceback_object = exception.__traceback__
             while traceback_object.tb_next:
                 traceback_object = traceback_object.tb_next

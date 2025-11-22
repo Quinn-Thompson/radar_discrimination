@@ -26,7 +26,7 @@ class ViewCapturedBackend:
         self.main_window.sub_window_widgets.render_control.widgets.next_button.clicked.connect(self.next_plot)
         self.main_window.sub_window_widgets.render_control.widgets.prev_button.clicked.connect(self.prev_plot)
         
-        self.transforms_backend = ViewTransformsBackend(self.main_window, self.sub_window.view_transforms_window, self.data_handler)
+        self.transforms_backend = ViewTransformsBackend(self.main_window, self.sub_window.view_transforms_window)
         self.data_list = []
         self.file_names = []
         

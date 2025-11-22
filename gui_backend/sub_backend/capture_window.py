@@ -8,13 +8,13 @@ import numpy as np
 from numpy.typing import NDArray
 from matplotlib.axes import Axes
 from typing import List, Optional
-from PyQt6.QtWidgets import QFileDialog
+from PyQt6 import QtCore, QtWidgets
 from gui.helpers import background_color
 from pathlib import Path
 from datetime import datetime
 
 
-class CaptureBackend:
+class CaptureBackend(QtCore.QObject):
     """The backend operations for the capturing window."""
     
     def __init__(self, main_window: MainWindow, sub_window: CaptureWindow, data_handler: DataHandler):
@@ -25,11 +25,14 @@ class CaptureBackend:
             sub_window: The window this backend is supporting.
             data_handler: The logic for getting data from another thread.
         """
+        super().__init__()
         self.figure_layout: List[Axes] = []
         self.main_window = main_window
         self.data_handler = data_handler
         self.sub_window = sub_window
-        self.transforms_backend = ViewTransformsBackend(self.main_window, self.sub_window.view_transforms_window, self.data_handler)
+        self.transforms_backend = ViewTransformsBackend(self.main_window, self.sub_window.view_transforms_window)
+        self.transforms_backend.raised_error.connect(self.data_handler.stop_acquisition)
+        self.transforms_backend.no_packets_in_flight.connect(self.send_out_next_frame, QtCore.Qt.ConnectionType.QueuedConnection)
         sub_window.widgets.capture_button_frames.clicked.connect(self.capture_x_frames)
         sub_window.widgets.capture_button_time.clicked.connect(self.capture_for_x_time)
         sub_window.widgets.save_button.clicked.connect(self.find_location_to_save)
@@ -38,6 +41,12 @@ class CaptureBackend:
         sub_window.widgets.start_acquisitions.clicked.connect(lambda: self.data_handler.start_acquisition())
         sub_window.widgets.stop_acquisitions.clicked.connect(lambda: self.data_handler.stop_acquisition())
         self.data_handler.update_matplotlib.connect(lambda time_stamp_data: self.update_plots(time_stamp_data))
+        self.data_handler.updated_sequence.connect(lambda chirp_info: self.transforms_backend.create_new_chirp_views(*chirp_info))
+
+    def send_out_next_frame(self):
+        """Send out the next frame to the display."""
+        if not self.data_handler.waiting_for_data:
+            self.data_handler.waiting_for_data = True
 
     def update_plots(self, time_stamp_data: Optional[TimeStampData]):
         """Update the plots in the view transforms.
@@ -52,7 +61,7 @@ class CaptureBackend:
 
     def find_location_to_save(self):
         """Browse the file explorer for where to save the data."""
-        folder = QFileDialog.getExistingDirectory(
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
             self.main_window, 
             "Select Folder", 
             "" 
