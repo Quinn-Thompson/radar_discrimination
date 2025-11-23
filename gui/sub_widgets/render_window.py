@@ -19,9 +19,12 @@ class RenderWindowControlWidgets(WindowWidgets):
         self.prev_session = QtWidgets.QPushButton("Previous Capture Session")
         self.replay_button = QtWidgets.QPushButton("Replay Session")
         self.play_button = QtWidgets.QPushButton("Play Session From Index")
+        self.pause_button = QtWidgets.QPushButton("Pause")
+        self.playback_speed = LineEditWithText("Playback Speed")
         self.which_session = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.which_data = LineEditWithText("Frame Index")
         self.array_title = QtWidgets.QLabel()
+        super().__init__()
 
 class RenderWindowControl(QtWidgets.QFrame):
     """The frame for controlling the animation."""
@@ -52,7 +55,9 @@ class RenderWindowControl(QtWidgets.QFrame):
 
         self.play_session_layout.addWidget(self.widgets.play_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.play_session_layout.addWidget(self.widgets.replay_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.play_session_layout.addWidget(self.widgets.pause_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addLayout(self.play_session_layout)
+        self.main_layout.addWidget(self.widgets.playback_speed,  alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
 
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Preferred)
         self.widgets.array_title.setFixedHeight(50)

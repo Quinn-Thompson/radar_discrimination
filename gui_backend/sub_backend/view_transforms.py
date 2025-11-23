@@ -22,6 +22,8 @@ from enum import Enum
 from queue import Empty
 import time
 
+_GRAB_SPEED = 16
+
 class NoTransformNoAcquisitionError(Exception):
     pass
 
@@ -250,7 +252,7 @@ class ViewTransformsBackend(QtCore.QObject):
         
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.check_arbitrary_run_request)
-        self.timer.start(16)
+        self.timer.start(_GRAB_SPEED)
         self.packets_in_flight = 0
         
         self.wait_for_packets = False

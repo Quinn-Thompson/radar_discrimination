@@ -300,7 +300,6 @@ class AddTab(QtWidgets.QTabWidget):
         
         self.tabCloseRequested.connect(lambda index: self.removeTab(index))
         self.view_tabs: Dict[str, AllChirpContainerWindow] = {}
-        self.all_chirps = None
 
     def handle_tab_click(self, index: int):
         """Event for when a tab is clicked on. If it is the rightmost, add a new tab.
@@ -315,7 +314,6 @@ class AddTab(QtWidgets.QTabWidget):
         self._unique_tab_names += 1
         self.view_tabs[str(self._unique_tab_names)] = AllChirpContainerWindow(str(self._unique_tab_names))
         self.root_layoutH = QtWidgets.QHBoxLayout()
-        self.root_layoutH.addWidget(self.all_chirps)
         index = self.insertTab(self.count() - 1, self.view_tabs[str(self._unique_tab_names)], f"View {self.count()}")
         self.setCurrentIndex(self.count() - 2) 
         self.root_layoutH.setContentsMargins(5, 0, 0, 0)

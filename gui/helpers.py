@@ -26,13 +26,13 @@ _NO_METHOD = "none"
 background_color = "#1A1A1A"
 hover_color = "#4A4A4A"
 clicked_color = "#8A8A8A"
-border_color = "#90ADC3"
+border_color = "#5E8B68"
 
 
 global_budget_window_style = (
     f"background-color: {background_color};"
     "border-style: outset;"
-    "border-width: 2px;"
+    "border-width: 4px;"
     "border-radius: 10px;"
     f"border-color: {border_color};"
     f"color: {border_color};"
