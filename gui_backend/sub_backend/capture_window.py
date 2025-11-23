@@ -1,6 +1,6 @@
 """Window to allow for capturing and saving data."""
 from gui.sub_widgets.capture_window import CaptureWindow
-from gui_backend.helpers import _RECEIVER_COUNT, TimeStampData
+from gui_backend.helpers import _RECEIVER_COUNT, TimeStampData, _DATETIME_FORMAT
 from gui_backend.pull_data import DataHandler, TimeStampData
 from gui_backend.sub_backend.view_transforms import ViewTransformsBackend
 from gui.main_window import MainWindow
@@ -78,9 +78,9 @@ class CaptureBackend(QtCore.QObject):
     def capture_x_frames(self):
         """The logic for what the button press should do for capturing x frames."""
         if self.sub_window.widgets.packet_prefix.getInnerText() != "":
-            packet_name = f"{self.sub_window.widgets.packet_prefix.getInnerText()}_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")}"
+            packet_name = f"{self.sub_window.widgets.packet_prefix.getInnerText()}_{datetime.now().strftime(_DATETIME_FORMAT)}"
         else:
-            packet_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
+            packet_name = datetime.now().strftime(_DATETIME_FORMAT)
         
         capture_count = self.sub_window.widgets.amount_to_capture.getInnerText()
         
@@ -94,9 +94,9 @@ class CaptureBackend(QtCore.QObject):
     def capture_for_x_time(self):
         """The logic for what the button press should do for capturing for x time."""
         if self.sub_window.widgets.packet_prefix.getInnerText() != "":
-            packet_name = f"{self.sub_window.widgets.packet_prefix.getInnerText()}_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")}"
+            packet_name = f"{self.sub_window.widgets.packet_prefix.getInnerText()}_{datetime.now().strftime(_DATETIME_FORMAT)}"
         else:
-            packet_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
+            packet_name = datetime.now().strftime(_DATETIME_FORMAT)
         
         capture_time = self.sub_window.widgets.amount_to_capture.getInnerText()
         

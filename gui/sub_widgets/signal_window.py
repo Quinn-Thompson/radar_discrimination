@@ -255,7 +255,7 @@ class SequenceValues():
         Returns:
             The different configurations of each action.
         """
-        return {k: v for k, v in self.__dict__.items() if isinstance(v, (int, float, bool))}
+        return {key: value for key, value in self.__dict__.items() if isinstance(value, (int, float, bool))}
 
     def set_json_dictionary(self, json_dictionary: Dict[str, str]):
         """Setup the values for the sequence element.

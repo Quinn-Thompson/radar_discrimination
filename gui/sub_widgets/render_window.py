@@ -2,35 +2,26 @@
 from PyQt6 import QtCore
 from PyQt6 import QtWidgets
 from PyQt6 import QtGui
-from gui.helpers import hover_color, clicked_color
+from gui.helpers import hover_color, clicked_color, LineEditWithText, WindowWidgets
 from typing import Generator
 
 _LABEL_WIDTH = 400
 
-class RenderWindowControlWidgets():
+class RenderWindowControlWidgets(WindowWidgets):
     """The widgets for the animation control window."""
     
     def __init__(self) -> None:
         """Initialize each widget within the window."""
         
-        self.next_button = QtWidgets.QPushButton()
-        self.prev_button = QtWidgets.QPushButton()
-        self.play_button = QtWidgets.QPushButton()
-        self.which_bloch = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.next_button = QtWidgets.QPushButton("Next Frame")
+        self.prev_button = QtWidgets.QPushButton("Previous Frame")
+        self.next_session = QtWidgets.QPushButton("Next Capture Session")
+        self.prev_session = QtWidgets.QPushButton("Previous Capture Session")
+        self.replay_button = QtWidgets.QPushButton("Replay Session")
+        self.play_button = QtWidgets.QPushButton("Play Session From Index")
+        self.which_session = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.which_data = LineEditWithText("Frame Index")
         self.array_title = QtWidgets.QLabel()
-        
-    @property
-    def buttons(self) -> Generator[QtWidgets.QPushButton, None, None]:
-        """Get every button that exists in the frame.
-        
-        Yields:
-            A button that exists in the frame.
-        """
-        buttons = []
-        for item in self.__dict__.values():
-            if isinstance(item, QtWidgets.QPushButton):
-                buttons.append(item)
-        return buttons
 
 class RenderWindowControl(QtWidgets.QFrame):
     """The frame for controlling the animation."""
@@ -39,28 +30,30 @@ class RenderWindowControl(QtWidgets.QFrame):
         """Initialize the animation control window."""
         
         super().__init__()
-        self.main_layout = QtWidgets.QGridLayout()
-        
+        self.main_layout = QtWidgets.QVBoxLayout()
+        self.session_layout = QtWidgets.QHBoxLayout()
+        self.frame_layout = QtWidgets.QHBoxLayout()
+        self.play_session_layout = QtWidgets.QHBoxLayout()
         self.widgets = RenderWindowControlWidgets()
 
         self.setLayout(self.main_layout)
-        self.widgets.next_button.setText("next")
-        self.widgets.prev_button.setText("prev")
-        self.main_layout.addWidget(
-            self.widgets.next_button,
-            0, 
-            0,
-            alignment=QtCore.Qt.AlignmentFlag.AlignCenter
-        )
-        self.main_layout.addWidget(
-            self.widgets.prev_button,
-            0, 
-            1,
-            alignment=QtCore.Qt.AlignmentFlag.AlignCenter
-        )
+        self.session_layout.addWidget(self.widgets.next_session, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.session_layout.addWidget(self.widgets.prev_session, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.main_layout.addLayout(self.session_layout)
+        
+        self.main_layout.addWidget(self.widgets.which_session, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        
+        self.frame_layout.addWidget(self.widgets.next_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.frame_layout.addWidget(self.widgets.prev_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.main_layout.addLayout(self.frame_layout)
 
-        self.main_layout.addWidget(self.widgets.which_bloch, 1, 1, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.main_layout.addWidget(self.widgets.array_title, 2, 1, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.main_layout.addWidget(self.widgets.array_title, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.main_layout.addWidget(self.widgets.which_data, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        self.play_session_layout.addWidget(self.widgets.play_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.play_session_layout.addWidget(self.widgets.replay_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.main_layout.addLayout(self.play_session_layout)
+
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Preferred)
         self.widgets.array_title.setFixedHeight(50)
         self.setMaximumWidth(_LABEL_WIDTH)
@@ -68,9 +61,6 @@ class RenderWindowControl(QtWidgets.QFrame):
         self.widgets.array_title.setMinimumWidth(200)
         self.widgets.array_title.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.NoTextInteraction)
         self.widgets.array_title.setWordWrap(False)
-        self.main_layout.setColumnStretch(1, 0)
-
-        self.setup_buttons()
 
     def set_elided_text(self, text: str):
         metrics = QtGui.QFontMetrics(self.widgets.array_title.font())
@@ -86,16 +76,3 @@ class RenderWindowControl(QtWidgets.QFrame):
                     
 
         self.widgets.array_title.setText(result)
-        
-    def setup_buttons(self):
-        """Setup button style so it has feedback.
-        """
-        for button in self.widgets.buttons:
-            button.setStyleSheet(
-                "QPushButton:hover {"
-                f"background-color: {hover_color};"
-                "}"
-                "QPushButton:pressed {"
-                f"background-color: {clicked_color};"
-                "}"
-            )

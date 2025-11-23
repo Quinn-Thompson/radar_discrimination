@@ -1,6 +1,6 @@
 """A helper function to prevent circular imports."""
 from gui.sub_widgets.signal_window import ChirpValues, LoopValues, DelayValues
-from typing import Optional
+from typing import Optional, Dict
 from ifxradarsdk.fmcw.types import FmcwElementType
 from PyQt6 import QtWidgets, QtCore
 import numpy as np
@@ -10,6 +10,9 @@ from dataclasses import dataclass
 
 _RECEIVER_COUNT = 3
 
+_CHIRP_INFO = "chirp_info.json"
+_CHIRP_DICT_START = "chirp_info_list"
+_DATETIME_FORMAT = "%Y_%m_%d_%H_%M_%S_%f"
 
 @dataclass
 class TimeStampData():
@@ -43,12 +46,23 @@ class WaveformSections(Enum):
     DELAY = -2.0
 
 class CreateLine():
-    def __init__(self, name: WaveformSections, duration: float, starting_frequency: float, ending_frequency: float, chirp: Optional[bool] = False):
+    def __init__(
+        self, 
+        name: str, 
+        duration: float, 
+        starting_frequency: float, 
+        ending_frequency: float,
+        chirp: bool = False
+    ):
         self.name = name
         self.duration = duration    
         self.starting_frequency = starting_frequency
         self.ending_frequency = ending_frequency
         self.chirp = chirp
+        self.tx_power_level: Optional[int] = None
+        self.lp_cutoff_Hz: Optional[int] = None
+        self.hp_cutoff_Hz: Optional[int] = None
+        self.if_gain_dB: Optional[int] = None
         if chirp:
             self.chirp_sequence = 0
     
@@ -57,7 +71,28 @@ class CreateLine():
             total_duration = self.duration
         sub_space = int(round((self.duration / total_duration) * total_size))
         return np.linspace(self.starting_frequency, self.ending_frequency, sub_space, endpoint=end_point)
+    
+    def get_json_dictionary(self) -> Dict[str, str]:
+        """Recurse through every element in the sequence and get the pertinent info.
 
+        Returns:
+            A key value pair for recreating the sequence.
+        """
+        return {key: value for key, value in self.__dict__.items() if isinstance(value, (str, float, bool, int))}
+
+    def set_json_dictionary(self, json_dictionary: Dict[str, str]):
+        """Setup the values for the sequence element.
+
+        Args:
+            json_dictionary: The remaining key/values to set the sequence element values.
+        """
+        for key in self.__dict__:
+            try:
+                self.__dict__[key] = json_dictionary[key]
+            except KeyError:
+                pass
+
+        
 class Popup(QtWidgets.QDialog):
     def __init__(self, string_to_display: str):
         super().__init__()

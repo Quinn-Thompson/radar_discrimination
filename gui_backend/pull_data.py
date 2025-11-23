@@ -12,8 +12,8 @@ import numpy as np
 from functools import partial
 from datetime import datetime
 from ctypes import POINTER
-from gui_backend.helpers import ElementSequence, CreateLine, EventsToHandle, TimeStampData
-
+from gui_backend.helpers import ElementSequence, CreateLine, EventsToHandle, TimeStampData, _CHIRP_INFO, _CHIRP_DICT_START, _DATETIME_FORMAT
+import json
 
 class_registry: Dict[str, ifxStructure] = {
     "FmcwSequenceChirp": FmcwSequenceChirp,
@@ -113,6 +113,7 @@ class DataHandler(QObject):
         self.callback_function = None
         self._start_capture_time = None
         self._capture_count = None
+        self.chirp_info_list = None
         self._previous_redraw_time = 0
 
     def stop_acquisition(self) -> None:
@@ -133,6 +134,7 @@ class DataHandler(QObject):
         self.info_signal.emit("Started No Data Acquisition Procs")
 
     def create_new_config(self, first_element: ElementSequence, chirp_info_list: List[CreateLine]):
+        self.chirp_info_list = chirp_info_list
         self.updated_sequence.emit((first_element, chirp_info_list))
         self.fmcw_custom.put(first_element)
         self.event_queue.put(EventsToHandle.NEW_SEQUENCE)
@@ -149,6 +151,8 @@ class DataHandler(QObject):
             if capture_time == 0.0:
                 capture_time = 2**16
             location.mkdir()
+            with open(location / _CHIRP_INFO, "w") as file_pointer:
+                json.dump({_CHIRP_DICT_START: [chirp_info.get_json_dictionary() for chirp_info in self.chirp_info_list]}, file_pointer, indent=4)
             self.capture = True
             self.callback_function = partial(self._handle_x_time_capture, capture_time=capture_time, location=location)
             self.info_signal.emit(f"Capturing for {capture_time} seconds to {location}")
@@ -166,6 +170,8 @@ class DataHandler(QObject):
             if capture_count == 0:
                 capture_count = 2**16
             location.mkdir()
+            with open(location / _CHIRP_INFO, "w") as file_pointer:
+                json.dump({_CHIRP_DICT_START: [chirp_info.get_json_dictionary() for chirp_info in self.chirp_info_list]}, file_pointer, indent=4)
             self.capture = True
             self.callback_function = partial(self._handle_x_count_capture, capture_count=capture_count, location=location)
             self.info_signal.emit(f"Capturing for {capture_count} frames to {location}")
@@ -226,7 +232,7 @@ class DataHandler(QObject):
             data_to_save = data.data
         
         for chirp_index, chirp_data in enumerate(data_to_save):
-            np.save(f"{location}/{datetime.fromtimestamp(data.time_stamp).strftime("%Y_%m_%d_%H_%M_%S_%f")}_{chirp_index}", chirp_data)
+            np.save(f"{location}/{datetime.fromtimestamp(data.time_stamp).strftime(_DATETIME_FORMAT)}_{chirp_index}", chirp_data)
         
     def poll_passback(self):
         try:

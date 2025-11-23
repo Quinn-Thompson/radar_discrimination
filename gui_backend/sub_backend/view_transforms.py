@@ -213,7 +213,13 @@ def run_arbitrary_code(
 class ViewTransformsBackend(QtCore.QObject):
     """Visualize the transforms provided from methods in another file."""
     
-    def __init__(self, main_window: MainWindow, sub_window: ViewTransforms, callback_raised_error: Callable, callback_no_packets_in_flight: Callable):
+    def __init__(
+        self, 
+        main_window: MainWindow, 
+        sub_window: ViewTransforms, 
+        callback_raised_error: Callable, 
+        callback_no_packets_in_flight: Callable,
+    ):
         """Initialize the elements and events for the view transforms window.
         
         Args:

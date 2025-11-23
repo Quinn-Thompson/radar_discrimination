@@ -15,8 +15,8 @@ Boundaries = NamedTuple("Boundaries", [("minimum", float), ("maximum", float)])
 
 
 class GraphTypes(Enum):
-    plot_2d = "2D Plot"
-    colormesh = "Color Mesh"
+    plot_2d = "Line Plots"
+    colormesh = "Grid Plot"
 
 class ReceiverPlots(pg.GraphicsLayoutWidget):
     def __init__(self):
@@ -126,6 +126,8 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
                 sub_plot.setRect(QtCore.QRectF(0, 0, 300, 300))
 
             elif self.graph_type == GraphTypes.plot_2d.value:
+                if transformed_data.dtype == np.str_ or transformed_data.dtype.str.startswith("<U"):
+                    raise TypeError("Line Plots do not support text formats.")
                 if changed_boundaries:
                         plot.setYRange(self.current_boundaries.minimum, self.current_boundaries.maximum)
                 for plot_index, line_plot in enumerate(sub_plot):

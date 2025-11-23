@@ -13,8 +13,8 @@ def t_cluster(frame_history: List[List[NDArray[np.float64]]]) -> List[NDArray[np
     # create a list (for each different chirp sequence) for 
     concatenated_data = [np.empty((chirp_sequence_frame.shape[0], len(frame_history) * chirp_sequence_frame.shape[1], 2)) for chirp_sequence_frame in frame_history[0]]
     # scalar = StandardScaler()
-    clusters = hdbscan.HDBSCAN(min_cluster_size=2)
-    scalar = StandardScaler()
+    # clusters = hdbscan.HDBSCAN(min_cluster_size=2)
+    # scalar = StandardScaler()
     # for each data point
     for transformed_frame_list_index, transformed_frame_list in enumerate(frame_history):
         # for each chirp sequence

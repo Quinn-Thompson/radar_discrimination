@@ -12,22 +12,23 @@ from matplotlib.collections import LineCollection
 
 
 color_lookup = {
-    WaveformSections.PLL_LOCK: (0.1, 0.1, 0.5),
-    WaveformSections.INIT_0: (0.1, 0.2, 0.5),
-    WaveformSections.INIT_1: (0.1, 0.2, 0.6),
-    WaveformSections.PRE_CHIRP: (0.1, 0.3, 0.6),
-    WaveformSections.PA_DELAY: (0.1, 0.3, 0.7),
-    WaveformSections.ADC_DELAY: (0.1, 0.4, 0.7),
-    WaveformSections.RAMP: (0.1, 0.4, 0.8),
-    WaveformSections.RAMP_END: (0.1, 0.5, 0.8),
-    WaveformSections.LOWER_RAMP: (0.1, 0.5, 0.9),
-    WaveformSections.POST_CHIRP: (0.1, 0.6, 0.9),
-    WaveformSections.CHIRP_END_0: (0.1, 0.6, 1.0),
-    WaveformSections.CHIRP_END_1: (0.1, 0.7, 1.0),
-    WaveformSections.LOOP_TIME: (0.1, 0.8, 1.0),
-    WaveformSections.DELAY: (0.1, 0.9, 1.0),
+    WaveformSections.PLL_LOCK.name: (0.1, 0.1, 0.5),
+    WaveformSections.INIT_0.name: (0.1, 0.2, 0.5),
+    WaveformSections.INIT_1.name: (0.1, 0.2, 0.6),
+    WaveformSections.PRE_CHIRP.name: (0.1, 0.3, 0.6),
+    WaveformSections.PA_DELAY.name: (0.1, 0.3, 0.7),
+    WaveformSections.ADC_DELAY.name: (0.1, 0.4, 0.7),
+    WaveformSections.RAMP.name: (0.1, 0.4, 0.8),
+    WaveformSections.RAMP_END.name: (0.1, 0.5, 0.8),
+    WaveformSections.LOWER_RAMP.name: (0.1, 0.5, 0.9),
+    WaveformSections.POST_CHIRP.name: (0.1, 0.6, 0.9),
+    WaveformSections.CHIRP_END_0.name: (0.1, 0.6, 1.0),
+    WaveformSections.CHIRP_END_1.name: (0.1, 0.7, 1.0),
+    WaveformSections.LOOP_TIME.name: (0.1, 0.8, 1.0),
+    WaveformSections.DELAY.name: (0.1, 0.9, 1.0),
 }
 
+_STARTING_FREQ = 56.32e9
 
 class SignalWindowBackend():
     """Create The sequences to generate with the TCR."""
@@ -53,7 +54,7 @@ class SignalWindowBackend():
         self.subplot.set_title("Signal", fontsize=10, pad=24, color="white")
         self.subplot.tick_params(axis='x', colors='white')
         self.subplot.tick_params(axis='y', colors='white')
-        self.chirp_info_list = None
+        self.chirp_info_list: Optional[List[CreateLine]] = None
         self.sub_window.action_window.widgets.send_to_device.clicked.connect(self.acquire_specified_config)
 
     def acquire_specified_config(self) -> None:
@@ -154,9 +155,9 @@ class SignalWindowBackend():
                 if repetition_difference < 0:
                     current_sequence.loop.repetition_time_s = -repetition_difference
                 if current_sequence.loop.num_repetitions:
-                    current_movement_list.append(CreateLine(WaveformSections.LOOP_TIME, current_sequence.loop.repetition_time_s - child_duration, 0, 0))
+                    current_movement_list.append(CreateLine(WaveformSections.LOOP_TIME.name, current_sequence.loop.repetition_time_s - child_duration, 0, 0))
         if current_sequence.type == FmcwElementType.IFX_SEQ_DELAY:
-            current_movement_list.append(CreateLine(WaveformSections.DELAY, current_sequence.delay.time_s, 0, 0))
+            current_movement_list.append(CreateLine(WaveformSections.DELAY.name, current_sequence.delay.time_s, 0, 0))
         if current_sequence.type == FmcwElementType.IFX_SEQ_CHIRP:
             ramp_time_period = current_sequence.chirp.num_samples / current_sequence.chirp.sample_rate_Hz
             ramp_speed = (current_sequence.chirp.end_frequency_Hz - current_sequence.chirp.start_frequency_Hz) / ramp_time_period
@@ -164,22 +165,31 @@ class SignalWindowBackend():
             pre_ramp_frequency = current_sequence.chirp.start_frequency_Hz + (WaveformSections.ADC_DELAY.value * ramp_speed)
             end_ramp_frequency = current_sequence.chirp.end_frequency_Hz + (WaveformSections.RAMP_END.value * ramp_speed)
             
-            current_movement_list.append(CreateLine(WaveformSections.PLL_LOCK, WaveformSections.PLL_LOCK.value, 56.32e9, pre_pa_frequnecy))
-            current_movement_list.append(CreateLine(WaveformSections.INIT_0, WaveformSections.INIT_0.value, pre_pa_frequnecy, pre_pa_frequnecy))
-            current_movement_list.append(CreateLine(WaveformSections.INIT_1, WaveformSections.INIT_1.value, pre_pa_frequnecy, pre_pa_frequnecy))
-            current_movement_list.append(CreateLine(WaveformSections.PRE_CHIRP, WaveformSections.PRE_CHIRP.value, pre_pa_frequnecy, pre_pa_frequnecy))
+            current_movement_list.append(CreateLine(WaveformSections.PLL_LOCK.name, WaveformSections.PLL_LOCK.value, _STARTING_FREQ, pre_pa_frequnecy))
+            current_movement_list.append(CreateLine(WaveformSections.INIT_0.name, WaveformSections.INIT_0.value, pre_pa_frequnecy, pre_pa_frequnecy))
+            current_movement_list.append(CreateLine(WaveformSections.INIT_1.name, WaveformSections.INIT_1.value, pre_pa_frequnecy, pre_pa_frequnecy))
+            current_movement_list.append(CreateLine(WaveformSections.PRE_CHIRP.name, WaveformSections.PRE_CHIRP.value, pre_pa_frequnecy, pre_pa_frequnecy))
             
-            current_movement_list.append(CreateLine(WaveformSections.PA_DELAY, WaveformSections.PA_DELAY.value, pre_pa_frequnecy, current_sequence.chirp.start_frequency_Hz))
-            current_movement_list.append(CreateLine(WaveformSections.ADC_DELAY, WaveformSections.ADC_DELAY.value, current_sequence.chirp.start_frequency_Hz, pre_ramp_frequency, chirp=True))
+            current_movement_list.append(CreateLine(WaveformSections.PA_DELAY.name, WaveformSections.PA_DELAY.value, pre_pa_frequnecy, current_sequence.chirp.start_frequency_Hz))
+            current_movement_list.append(CreateLine(WaveformSections.ADC_DELAY.name, WaveformSections.ADC_DELAY.value, current_sequence.chirp.start_frequency_Hz, pre_ramp_frequency, chirp=True))
             current_movement_list[-1].chirp_sequence = current_sequence.chirp_sequence
-            current_movement_list.append(CreateLine(WaveformSections.RAMP, ramp_time_period - WaveformSections.ADC_DELAY.value, pre_ramp_frequency, current_sequence.chirp.end_frequency_Hz, chirp=True))                        
-            current_movement_list[-1].chirp_sequence = current_sequence.chirp_sequence
+            current_movement_list[-1].if_gain_dB = current_sequence.chirp.if_gain_dB
+            current_movement_list[-1].hp_cutoff_Hz = current_sequence.chirp.hp_cutoff_Hz
+            current_movement_list[-1].lp_cutoff_Hz = current_sequence.chirp.lp_cutoff_Hz
+            current_movement_list[-1].tx_power_level = current_sequence.chirp.tx_power_level
             
-            current_movement_list.append(CreateLine(WaveformSections.RAMP_END, WaveformSections.RAMP_END.value, current_sequence.chirp.end_frequency_Hz, end_ramp_frequency))
-            current_movement_list.append(CreateLine(WaveformSections.LOWER_RAMP, WaveformSections.LOWER_RAMP.value, end_ramp_frequency, pre_pa_frequnecy))
-            current_movement_list.append(CreateLine(WaveformSections.POST_CHIRP, WaveformSections.POST_CHIRP.value, pre_pa_frequnecy, pre_pa_frequnecy))
-            current_movement_list.append(CreateLine(WaveformSections.CHIRP_END_0, WaveformSections.CHIRP_END_0.value, pre_pa_frequnecy, pre_pa_frequnecy))
-            current_movement_list.append(CreateLine(WaveformSections.CHIRP_END_1, WaveformSections.CHIRP_END_1.value, pre_pa_frequnecy, pre_pa_frequnecy))
+            current_movement_list.append(CreateLine(WaveformSections.RAMP.name, ramp_time_period - WaveformSections.ADC_DELAY.value, pre_ramp_frequency, current_sequence.chirp.end_frequency_Hz, chirp=True))                        
+            current_movement_list[-1].chirp_sequence = current_sequence.chirp_sequence
+            current_movement_list[-1].if_gain_dB = current_sequence.chirp.if_gain_dB
+            current_movement_list[-1].hp_cutoff_Hz = current_sequence.chirp.hp_cutoff_Hz
+            current_movement_list[-1].lp_cutoff_Hz = current_sequence.chirp.lp_cutoff_Hz
+            current_movement_list[-1].tx_power_level = current_sequence.chirp.tx_power_level
+            
+            current_movement_list.append(CreateLine(WaveformSections.RAMP_END.name, WaveformSections.RAMP_END.value, current_sequence.chirp.end_frequency_Hz, end_ramp_frequency))
+            current_movement_list.append(CreateLine(WaveformSections.LOWER_RAMP.name, WaveformSections.LOWER_RAMP.value, end_ramp_frequency, pre_pa_frequnecy))
+            current_movement_list.append(CreateLine(WaveformSections.POST_CHIRP.name, WaveformSections.POST_CHIRP.value, pre_pa_frequnecy, pre_pa_frequnecy))
+            current_movement_list.append(CreateLine(WaveformSections.CHIRP_END_0.name, WaveformSections.CHIRP_END_0.value, pre_pa_frequnecy, pre_pa_frequnecy))
+            current_movement_list.append(CreateLine(WaveformSections.CHIRP_END_1.name, WaveformSections.CHIRP_END_1.value, pre_pa_frequnecy, pre_pa_frequnecy))
 
         if current_sequence.next_element is not None:
             self.create_signal(current_sequence.next_element, current_movement_list)
@@ -205,7 +215,7 @@ class SignalWindowBackend():
             next_location = current_location + movement_item.duration
             if movement_item.chirp:
                 self.chirp_info_list.append(movement_item)
-            if movement_item.name not in (WaveformSections.LOOP_TIME, WaveformSections.DELAY):
+            if movement_item.name not in (WaveformSections.LOOP_TIME.name, WaveformSections.DELAY.name):
                 colors.append(color_lookup[movement_item.name])
                 movement_coordinates = [(current_location, movement_item.starting_frequency), (next_location, movement_item.ending_frequency)]
                 movement_coordinates_list.append(movement_coordinates)
@@ -216,3 +226,16 @@ class SignalWindowBackend():
         self.subplot.add_collection(LineCollection(movement_coordinates_list, colors=colors, linewidth=2))
         self.subplot.autoscale()
         self.subplot.figure.canvas.draw_idle()
+
+    def get_json_dictionary(self) -> Dict[str, str]:
+        """Recurse through every element in the sequence and get the pertinent info.
+
+        Returns:
+            A key value pair for recreating the sequence.
+        """
+        my_contents: List[Dict[str, str]] = []
+
+        for chirp_info in self.chirp_info_list:
+            my_contents.append(chirp_info.get_json_dictionary)
+        return {"chirp_info_list": my_contents}
+        
