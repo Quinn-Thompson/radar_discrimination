@@ -115,6 +115,10 @@ def t_view_sent_signal(chirp_info_list: List[CreateLine]):
     chirp_recreator = RecreateChirp(chirp_info_list, 60)
     return chirp_recreator.recreate_single_chirp()
 
+def t_beam_form(frame_list: List[NDArray[np.float64]]):
+    averaged = [np.mean(frame, axis=0,keepdims=True) for frame in frame_list]
+    return averaged
+
 def t_view_text(chirp_info_list: List[CreateLine]):
     my_text = [["test11", "test12"], ["test21", "test22"]]
     return [np.array(my_text)]
