@@ -70,7 +70,7 @@ def run_device_inner_loop(data_queue: mp.Queue, event_passed: Event, event_queue
                     
             if acquire:
                 frame_contents = device.get_next_frame()
-                data_queue.put(TimeStampData(time.time(), frame_contents))
+                data_queue.put(TimeStampData("nan", time.time(), frame_contents))
             else:
                 time.sleep(0.1)
 

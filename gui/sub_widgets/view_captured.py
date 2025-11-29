@@ -3,7 +3,7 @@ from gui.sub_widgets.render_window import RenderWindowControl
 from gui.sub_widgets.view_transforms import ViewTransforms
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
-from gui.helpers import WindowWidgets
+from gui.helpers import WindowWidgets, LineEditWithText
 
 
 class ViewCapturedWidgets(WindowWidgets):
@@ -12,7 +12,10 @@ class ViewCapturedWidgets(WindowWidgets):
     def __init__(self) -> None:
         """Initialize each widget within the window.
         """
-        self.load_button = QtWidgets.QPushButton()
+        self.load_button = QtWidgets.QPushButton("Load Frames Recursively")
+        self.apply_transform = QtWidgets.QPushButton("Apply Viewed Transform To All Data")
+        self.save_location = LineEditWithText("Save Location")
+        self.save_file_explorer = QtWidgets.QPushButton("Save Transformed Data At")
         super().__init__()
 
 
@@ -42,4 +45,16 @@ class ViewCaptured(QtWidgets.QFrame):
             self.widgets.load_button,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
-        self.widgets.load_button.setText("Load Frames Recursively")
+        self.load_layout.addWidget(
+            self.widgets.save_file_explorer,
+            alignment=QtCore.Qt.AlignmentFlag.AlignCenter
+        )
+        self.load_layout.addWidget(
+            self.widgets.save_location,
+            alignment=QtCore.Qt.AlignmentFlag.AlignCenter
+        )
+        self.load_layout.addWidget(
+            self.widgets.apply_transform,
+            alignment=QtCore.Qt.AlignmentFlag.AlignCenter
+        )
+

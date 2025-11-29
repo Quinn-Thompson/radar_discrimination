@@ -57,10 +57,7 @@ class CaptureBackend(QtCore.QObject):
         Args:
             frame
         """
-        if time_stamp_data is not None:
-            self.transforms_backend.iterate_through_each_view_tab(time_stamp_data.data)
-        else:
-            self.transforms_backend.iterate_through_each_view_tab(time_stamp_data)
+        self.transforms_backend.iterate_through_each_view_tab(time_stamp_data)
 
     def find_location_to_save(self):
         """Browse the file explorer for where to save the data."""

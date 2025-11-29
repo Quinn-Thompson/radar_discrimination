@@ -3,7 +3,7 @@ from gui.sub_widgets.view_captured import ViewCaptured
 from gui_backend.sub_backend.view_transforms import ViewTransformsBackend, _GRAB_SPEED
 from gui.main_window import MainWindow
 from PyQt6.QtWidgets import QFileDialog
-from PyQt6 import QtCore
+from PyQt6 import QtCore, QtWidgets
 import os
 import numpy as np
 from numpy.typing import NDArray
@@ -27,6 +27,7 @@ class PlayWorker(QtCore.QObject):
     move_to_next_frame = QtCore.pyqtSignal()
     pause_player_signal = QtCore.pyqtSignal()
     begin_player = QtCore.pyqtSignal(int, float, float, list)
+    finished = QtCore.pyqtSignal()
     
     def __init__(self):
         super().__init__()
@@ -55,6 +56,7 @@ class PlayWorker(QtCore.QObject):
                 self.move_to_next_frame.emit()
                 previous_time = current_time
                 current_time_stamp += 1
+        self.finished.emit()
 
 
 class ViewCapturedBackend:
@@ -85,9 +87,14 @@ class ViewCapturedBackend:
         
         self.main_window.sub_window_widgets.render_control.widgets.playback_speed.line_edit.textEdited.connect(self.set_playback_speed)
         
+        self.sub_window.widgets.save_file_explorer.clicked.connect(self.find_location_to_save)
+        self.sub_window.widgets.apply_transform.clicked.connect(self.apply_transform_and_save)
+        
         self.session_list = []
         
-        self.transforms_backend = ViewTransformsBackend(self.main_window, self.sub_window.view_transforms_window, self.stop_everything, self.handle_change_operations)
+        self.transforms_backend = ViewTransformsBackend(
+            self.main_window, self.sub_window.view_transforms_window, self.stop_everything, self.handle_change_operations
+        )
         self.timestamp_change_operations = []
         self.current_timestamp = 0
         self.current_session = 0
@@ -141,12 +148,12 @@ class ViewCapturedBackend:
                         file_date_time, _, chirp_id = file_name.rpartition("_")
                         if previous_date_time is not None and file_date_time != previous_date_time:
                             file_timestamp = datetime.strptime(file_date_time, _DATETIME_FORMAT).timestamp()
-                            time_stamped_data.append(TimeStampData(file_timestamp, chirp_data.copy()))
+                            time_stamped_data.append(TimeStampData(session_name, file_timestamp, chirp_data.copy()))
                             chirp_data = []
                         chirp_data.append(frame_data)
                         previous_date_time = file_date_time
                 else:
-                    time_stamped_data.append(TimeStampData(file_timestamp, chirp_data))
+                    time_stamped_data.append(TimeStampData(session_name, file_timestamp, chirp_data))
                 
                 chirp_info_list = [CreateLine("", 0.0, 0.0, 0.0)] * len(json_dictionary[_CHIRP_DICT_START])
                 for dict_chirp_info, chirp_info in zip(json_dictionary[_CHIRP_DICT_START], chirp_info_list):
@@ -161,9 +168,22 @@ class ViewCapturedBackend:
        
             self.main_window.sub_window_widgets.render_control.widgets.which_session.setMaximum(len(self.session_list) - 1)
             self.transforms_backend.iterate_through_each_view_tab(
-                self.session_list[self.current_session].time_stamp_data[self.current_timestamp].data
+                self.session_list[self.current_session].time_stamp_data[self.current_timestamp]
             )
- 
+
+    def find_location_to_save(self):
+        """Browse the file explorer for where to save the data."""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self.main_window, 
+            "Select Folder", 
+            "" 
+        )
+
+        if folder:
+            self.sub_window.widgets.save_location.setInnerText(folder)
+        else:
+            self.sub_window.widgets.save_location.setInnerText("No file selected") 
+
     def handle_change_operations(self):
         while True:
             try:
@@ -194,38 +214,38 @@ class ViewCapturedBackend:
     
     def on_slider_change(self, index_to_move_to: int) -> None:
         self.timestamp_change_operations.append(partial(self.set_session, index_to_move_to, False))
-        self.transforms_backend.iterate_through_each_view_tab(self.session_list[index_to_move_to].time_stamp_data[self.current_timestamp].data)
+        self.transforms_backend.iterate_through_each_view_tab(self.session_list[index_to_move_to].time_stamp_data[self.current_timestamp])
 
     def next_session(self):
         if self.current_session + 1 > len(self.session_list) - 1:
             return
         
         self.timestamp_change_operations.append(partial(self.set_session, self.current_session+1))
-        self.transforms_backend.iterate_through_each_view_tab(self.session_list[self.current_session].time_stamp_data[self.current_timestamp+1].data)
+        self.transforms_backend.iterate_through_each_view_tab(self.session_list[self.current_session].time_stamp_data[self.current_timestamp+1])
 
     def prev_session(self):
         if self.current_session - 1 < 0:
             return
         self.timestamp_change_operations.append(partial(self.set_session, self.current_session-1))
-        self.transforms_backend.iterate_through_each_view_tab(self.session_list[self.current_session].time_stamp_data[self.current_timestamp+1].data)
+        self.transforms_backend.iterate_through_each_view_tab(self.session_list[self.current_session].time_stamp_data[self.current_timestamp+1])
 
     def on_time_stamp_change(self, index_to_move_to: int) -> None:
         self.timestamp_change_operations.append(partial(self.set_time_stamp, index_to_move_to, False))
-        self.transforms_backend.iterate_through_each_view_tab(self.session_list[self.current_session].time_stamp_data[index_to_move_to].data)
+        self.transforms_backend.iterate_through_each_view_tab(self.session_list[self.current_session].time_stamp_data[index_to_move_to])
 
     def next_plot(self):
         if self.current_timestamp + 1 > len(self.session_list[self.current_session].time_stamp_data) - 1:
             return
         
         self.timestamp_change_operations.append(partial(self.set_time_stamp, self.current_timestamp+1))
-        self.transforms_backend.iterate_through_each_view_tab(self.session_list[self.current_session].time_stamp_data[self.current_timestamp+1].data)
+        self.transforms_backend.iterate_through_each_view_tab(self.session_list[self.current_session].time_stamp_data[self.current_timestamp+1])
 
     def prev_plot(self):
         if self.current_timestamp - 1 < 0:
             return
         
         self.timestamp_change_operations.append(partial(self.set_time_stamp, self.current_timestamp-1))
-        self.transforms_backend.iterate_through_each_view_tab(self.session_list[self.current_session].time_stamp_data[self.current_timestamp-1].data)
+        self.transforms_backend.iterate_through_each_view_tab(self.session_list[self.current_session].time_stamp_data[self.current_timestamp-1])
 
     def set_playback_speed(self):
         playback_speed = self.sub_window.render_window.widgets.playback_speed.getInnerText()
@@ -235,13 +255,13 @@ class ViewCapturedBackend:
             self.playback_speed = max(self.minimum_speed, self.sub_window.render_window.widgets.playback_speed.getInnerText())
         self.sub_window.render_window.widgets.playback_speed.setInnerText(self.playback_speed)
 
-    def replay_frames(self):
+    def replay_frames(self, finished_playback: Optional[Callable] = None):
         self.paused = False
         self.current_timestamp = 0
-        self.play_frames()
+        self.play_frames(self.pause_player)
         
     def play_frames_from_index(self):
-        self.play_frames()
+        self.play_frames(self.pause_player)
 
     def pause_player(self):
         if self.current_player is not None:
@@ -251,9 +271,7 @@ class ViewCapturedBackend:
             self.player_thread.wait()
             self.player_thread = None
             
-    def play_frames(self):
-        self.pause_player()
-        
+    def play_frames(self, finished_playback: Callable):
         self.player_thread = QtCore.QThread()
         
         self.current_player = PlayWorker()
@@ -266,6 +284,14 @@ class ViewCapturedBackend:
         )
         
         self.player_thread.start()
+        self.current_player.finished.connect(finished_playback)        
 
+    def post_transform_data_handling(self, transform_data: TimeStampData):
+        location = self.sub_window.widgets.save_location
+        for sampling_number, sampling_data in enumerate(transform_data.data):
+            np.save(f"{location}/{datetime.fromtimestamp(transform_data.time_stamp).strftime(_DATETIME_FORMAT)}_{sampling_number}", sampling_data)
 
-    
+    def apply_transform_and_save(self):
+        self.transforms_backend.callback_new_transform_data = self.post_transform_data_handling
+        for sequence in self.session_list:
+            self.replay_frames()

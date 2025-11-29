@@ -1,6 +1,6 @@
 """A helper function to prevent circular imports."""
 from gui.sub_widgets.signal_window import ChirpValues, LoopValues, DelayValues
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Union
 from ifxradarsdk.fmcw.types import FmcwElementType
 from PyQt6 import QtWidgets, QtCore
 import numpy as np
@@ -17,8 +17,9 @@ _DATETIME_FORMAT = "%Y_%m_%d_%H_%M_%S_%f"
 @dataclass
 class TimeStampData():
     """Numpy data that has a time stamp."""
+    name: str
     time_stamp: float
-    data: NDArray[np.float64]
+    data: Union[NDArray[np.float64], List[NDArray[np.float64]]]
 
 class EventsToHandle(Enum):
     NEW_SEQUENCE = 0
