@@ -6,6 +6,7 @@ from gui.main_window import MainWindow
 from gui_backend.sub_backend.view_captured import ViewCapturedBackend
 from gui_backend.sub_backend.capture_window import CaptureBackend
 from gui_backend.sub_backend.signal_window import SignalWindowBackend
+from gui_backend.sub_backend.train_network import TrainBackend
 from gui_backend.pull_data import DataHandler
 from functools import partial
 from PyQt6 import QtCore
@@ -36,8 +37,9 @@ class VisualizationWrapper(QtCore.QObject):
         self.printout_timer.timeout.connect(self.data_handler.poll_passback)
         self.printout_timer.start(500)
         
-        
         self.main_window = main_window
         self.view_captured = ViewCapturedBackend(self.main_window, self.main_window.sub_window_widgets.view_captured, self.data_handler)
+        self.view_captured.info_signal = self.info_signal
         self.capture = CaptureBackend(self.main_window, self.main_window.sub_window_widgets.capture_window, self.data_handler)
         self.signals = SignalWindowBackend(self.main_window, self.main_window.sub_window_widgets.signal_window, self.data_handler)
+        self.train = TrainBackend(self.main_window, self.main_window.sub_window_widgets.train_window)

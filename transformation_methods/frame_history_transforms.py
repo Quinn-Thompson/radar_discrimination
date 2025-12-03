@@ -1,13 +1,25 @@
 import numpy as np
 from numpy.typing import NDArray
 from scipy import signal
-from gui_backend.helpers import CreateLine
+from gui_backend.helpers import CreateLine, TertiaryData, Label
 from typing import List
 import hdbscan
 from scipy.signal import find_peaks
 from sklearn.preprocessing import StandardScaler
 
 _NUM_BINS = 300
+
+def t_maintain(frame_history: List[List[NDArray[np.float64]]], tertiary_data: TertiaryData) -> List[NDArray[np.float64]]:
+    history_length = len(frame_history)
+    new_output = []
+    for first_frames in frame_history[0]:
+        new_output.append(np.empty((first_frames.shape[:-1] + (first_frames.shape[-1] * history_length, ))))
+    for chirp in range(len(new_output)):
+        for frame_index, frame in enumerate(frame_history):
+            new_output[chirp][..., frame_index*first_frames.shape[-1]:(frame_index+1)*first_frames.shape[-1]] = frame[chirp][..., :]
+    for tab_index, tab_name in enumerate(tertiary_data.graph_info.tab_names):
+        tertiary_data.graph_info.tab_names[tab_index] = tab_name + "History"
+    return new_output, tertiary_data
 
 def t_cluster(frame_history: List[List[NDArray[np.float64]]]) -> List[NDArray[np.float64]]:
     # create a list (for each different chirp sequence) for 

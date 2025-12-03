@@ -150,7 +150,7 @@ class DataHandler(QObject):
         if self.acquiring:
             if capture_time == 0.0:
                 capture_time = 2**16
-            location.mkdir()
+            location.mkdir(exist_ok=True)
             with open(location / _CHIRP_INFO, "w") as file_pointer:
                 json.dump({_CHIRP_DICT_START: [chirp_info.get_json_dictionary() for chirp_info in self.chirp_info_list]}, file_pointer, indent=4)
             self.capture = True
@@ -169,7 +169,7 @@ class DataHandler(QObject):
         if self.acquiring:
             if capture_count == 0:
                 capture_count = 2**16
-            location.mkdir()
+            location.mkdir(exist_ok=True)
             with open(location / _CHIRP_INFO, "w") as file_pointer:
                 json.dump({_CHIRP_DICT_START: [chirp_info.get_json_dictionary() for chirp_info in self.chirp_info_list]}, file_pointer, indent=4)
             self.capture = True

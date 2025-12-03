@@ -16,7 +16,7 @@ color meshes should be able to handle 3 axis and 2 axis data.
 import numpy as np
 from numpy.typing import NDArray
 from scipy import signal
-from gui_backend.helpers import CreateLine
+from gui_backend.helpers import CreateLine, TertiaryData, Label
 from typing import List
 
 
@@ -122,3 +122,19 @@ def t_beam_form(frame_list: List[NDArray[np.float64]]):
 def t_view_text(chirp_info_list: List[CreateLine]):
     my_text = [["test11", "test12"], ["test21", "test22"]]
     return [np.array(my_text)]
+
+def t_avg_difference(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
+    if len(frame_list) != 3:
+        raise TypeError
+
+
+    z_axis_label = f"Averaged {tertiary_data.graph_info.z_axis_label.name} Along {tertiary_data.graph_info.y_axis_label.name}"
+    tertiary_data.graph_info.y_axis_label = None
+    tertiary_data.graph_info.z_axis_label = Label(z_axis_label, tertiary_data.graph_info.z_axis_label.units)
+    tertiary_data.graph_info.tab_names = ["Differential Average"]
+    differential = np.array(np.average(frame_list[1] - frame_list[2]))[None]
+    return [differential], tertiary_data
+
+
+# def t_train_auto_encoder(frame_list: List[NDArray[np.float64]], chirp_info_list: List[CreateLine], tertiary_data: TertiaryData):
+    

@@ -5,7 +5,10 @@ from PyQt6.QtGui import QDrag, QPixmap, QDragMoveEvent
 from typing import Generator, List
 
 from pathlib import Path
-from typing import NamedTuple, Dict
+from typing import NamedTuple, Dict, Any
+from enum import Enum
+
+from dataclasses import dataclass
 
 ModuleInfo = NamedTuple("ModuleInfo", [("module_path", Path), ("module_name", str)])
 
@@ -19,6 +22,9 @@ _HISTORY_TRANSFORM_PATH = _METHOD_FOLDER / "frame_history_transforms.py"
 _HISTORY_FEATURES_NAME = "Frame History Transforms"
 _HISTORY_TRANSFORMS_INFO = ModuleInfo(_HISTORY_TRANSFORM_PATH, _HISTORY_FEATURES_NAME)
 
+_NO_DATA_EDIT = "NOEDIT"
+_SEPERATE_FIRST_DIM = "ONE_DIM"
+
 _RECEIVER_COUNT = 3
 
 _NO_METHOD = "none"
@@ -26,7 +32,7 @@ _NO_METHOD = "none"
 background_color = "#1A1A1A"
 hover_color = "#4A4A4A"
 clicked_color = "#8A8A8A"
-border_color = "#5E8B68"
+border_color = "#5A5A5A"
 
 
 global_budget_window_style = (
@@ -54,6 +60,44 @@ small_item_window_style = (
     "border-radius: 0px;"
 )
 
+@dataclass
+class Label:
+    name: str
+    units: str
+    
+    def __str__(self) -> str:
+        return f"{self.name} {self.units}"
+
+@dataclass
+class PerSubPlot:
+    def __init__(self):
+        self.sub_plot_name: str = "Receiver"
+        self.x_axis_label = Label("Long Time", "Bin(s)")
+
+class GraphInfo:
+    def __init__(self):
+        self.line_color: str = "white"
+        self.tab_names: List[str] = []
+        self.per_subplot_info: List[PerSubPlot] = []
+        self.y_axis_label: Label = Label("Short Time", "Bin(s)")
+        self.z_axis_label: Label = Label("Amplitude", "ADC Return(s)")
+    
+class TertiaryData:
+    """Numpy data that has a time stamp."""
+    def __init__(self):
+        self.notable_events: Dict[str, int] = {}
+        self.fundamentals: Dict[str, Any] = {}
+        self.graph_info = GraphInfo()
+
+
+class LoadType(Enum):
+    NO_APPEND = "No Append"
+    APPEND_FLATTEN_CHIRPS = "Append Flattened Chirps"
+    APPEND_SHORT_TIME = "Append Short Time"
+    APPEND_CHIRPS = "Append Chirps"
+
+class Models(Enum):
+    AUTOENCODER = "Auto Encoder"
 
 class DraggableLabel(QtWidgets.QLabel):
     def mouseMoveEvent(self, event: QDragMoveEvent):

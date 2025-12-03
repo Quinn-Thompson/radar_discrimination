@@ -1,6 +1,7 @@
 """A helper function to prevent circular imports."""
 from gui.sub_widgets.signal_window import ChirpValues, LoopValues, DelayValues
-from typing import Optional, Dict, List, Union
+from gui.helpers import TertiaryData, GraphInfo, PerSubPlot, Label
+from typing import Optional, Dict, List, Union, Any
 from ifxradarsdk.fmcw.types import FmcwElementType
 from PyQt6 import QtWidgets, QtCore
 import numpy as np
@@ -20,6 +21,7 @@ class TimeStampData():
     name: str
     time_stamp: float
     data: Union[NDArray[np.float64], List[NDArray[np.float64]]]
+    transform: Optional[str] = None
 
 class EventsToHandle(Enum):
     NEW_SEQUENCE = 0
