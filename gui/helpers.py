@@ -97,7 +97,12 @@ class LoadType(Enum):
     APPEND_CHIRPS = "Append Chirps"
 
 class Models(Enum):
+    SMALLAUTOENCODER = "Small Auto Encoder"
     AUTOENCODER = "Auto Encoder"
+
+class LossType(Enum):
+    MSE = "MSE"
+    MAE = "MAE"
 
 class DraggableLabel(QtWidgets.QLabel):
     def mouseMoveEvent(self, event: QDragMoveEvent):

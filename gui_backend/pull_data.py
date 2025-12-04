@@ -2,7 +2,7 @@
 import multiprocessing as mp
 from multiprocessing.synchronize import Event
 from ifxradarsdk.fmcw import DeviceFmcw
-from ifxradarsdk.fmcw.types import FmcwSimpleSequenceConfig, FmcwSequenceChirp, ifxStructure, FmcwSequenceDelay, FmcwSequenceLoop, FmcwSequenceElement, FmcwElementType
+from ifxradarsdk.fmcw.types import FmcwSequenceChirp, ifxStructure, FmcwSequenceDelay, FmcwSequenceLoop, FmcwSequenceElement, FmcwElementType
 from pathlib import Path
 from typing import Dict, List, Optional
 from PyQt6.QtCore import QTimer, pyqtSignal, QObject, QMutex

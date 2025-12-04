@@ -36,6 +36,11 @@ class MethodArgumentsError(Exception):
 
 
 @dataclass
+class AllData:
+    frame_data: Dict[str, NDArray[np.float64]]
+    tertiary_data: Dict[str, Optional[TertiaryData]] = None
+
+@dataclass
 class DataPacket:
     frame_data: TimeStampData
     chirp_info_list: List[CreateLine]
@@ -127,14 +132,14 @@ def different_method_calls(
         except TypeError:
             continue
     else:
-        raise MethodArgumentsError("Method arguments failed to pass Typing.")
+        raise MethodArgumentsError(f"Method arguments failed to pass Typing for {method_call.__name__}.")
 
 def handle_methods(
     data_packet: DataPacket, 
     method_packets: List[MethodPacket],
     tertiary_data: Optional[TertiaryData],
     modules: Dict[ModuleInfo, ModuleType], 
-    data_list: Dict[str, List[TimeStampData]]
+    data_list: AllData
 ) -> List[NDArray[np.float64]]:
     """Handles transforming the data for the GUI window.
 
@@ -149,11 +154,13 @@ def handle_methods(
     """
     transformed_data = data_packet.frame_data.data
     transformed_tertiary_data = tertiary_data
-    if data_packet.tab_to_update not in data_list and transformed_data is not None: 
-        data_list[data_packet.tab_to_update] = []
+    if transformed_tertiary_data is not None:
+        transformed_tertiary_data.fundamentals["label"] = data_packet.frame_data.name
+    if data_packet.tab_to_update not in data_list.frame_data and transformed_data is not None: 
+        data_list.frame_data[data_packet.tab_to_update] = []
+        data_list.tertiary_data[data_packet.tab_to_update] = []
     
     transform_name = ""
-    
     for method_packet in method_packets:
         # Single Data Transform
         if method_packet.module_info.module_name == _SINGLE_TRANSFORM_NAME:
@@ -179,15 +186,18 @@ def handle_methods(
         if method_packet.module_info.module_name == _HISTORY_FEATURES_NAME:
             if method_packet.method_name != _NO_METHOD:
                 transform_name += method_packet.method_name
-                if len(data_list[data_packet.tab_to_update]) > _ALLOWED_LENGTH:
-                    data_list[data_packet.tab_to_update].pop(0)
-                data_list[data_packet.tab_to_update].append(transformed_data)
+                if len(data_list.frame_data[data_packet.tab_to_update]) > _ALLOWED_LENGTH:
+                    data_list.frame_data[data_packet.tab_to_update].pop(0)
+                    data_list.tertiary_data[data_packet.tab_to_update].pop(0)
+                data_list.frame_data[data_packet.tab_to_update].append(AllData(transformed_data, transformed_tertiary_data))
+                data_list.tertiary_data[data_packet.tab_to_update].append(AllData(transformed_data, transformed_tertiary_data))
                 feature_method = getattr(modules[method_packet.module_info.module_name], method_packet.method_name)
                 transformed_data, transformed_tertiary_data = different_method_calls(
-                    feature_method, data_list[data_packet.tab_to_update], data_packet.chirp_info_list, transformed_tertiary_data
+                    feature_method, data_list.frame_data[data_packet.tab_to_update], data_packet.chirp_info_list, data_list.tertiary_data[data_packet.tab_to_update]
                 )
             else:
-                data_list[data_packet.tab_to_update] = [transformed_data]
+                data_list.frame_data[data_packet.tab_to_update] = [transformed_data]
+                data_list.tertiary_data[data_packet.tab_to_update] = [transformed_tertiary_data]
                 
     return TimeStampData(
         data_packet.frame_data.name, 
@@ -209,15 +219,14 @@ def run_arbitrary_code(
         empty_queues: The event of the event queue being empty.
     """
     modules = {}
-    data_list = {}
+    data_list = AllData({}, {})
     while True:
         try:
             try:
                 event = event_queue.get(timeout=0.05)
                 empty_queues.clear()
                 if event == DataEventsToHandle.NEW_DATA:
-                    pass_in_data: PassInPacket = pass_in_queue.get(timeout=0.05)
-
+                    pass_in_data: PassInPacket = pass_in_queue.get(timeout=0.16)
                     feature_data, transformed_tertiary_data = handle_methods(
                         pass_in_data.data_packet, pass_in_data.method_packets, pass_in_data.tertiary_data, modules, data_list
                     )
@@ -229,7 +238,7 @@ def run_arbitrary_code(
                     new_methods(method_packets, modules)
                     
                 elif event == DataEventsToHandle.CLEAR_DATA:
-                    data_list = {}
+                    data_list = AllData({},{})
                 elif event == DataEventsToHandle.END_TRANSMISSION:
                     transformed_data_queue.put(PassbackPacket(None, None, end_transmission=True))
             except Empty:
@@ -314,7 +323,7 @@ class ViewTransformsBackend(QtCore.QObject):
         ))
         new_tab.widgets.graph_type.combo_box.currentTextChanged.connect(partial(self.update_graph_type, new_tab))
         for method_dropdown in new_tab.widgets.method_dropdowns.values():
-            method_dropdown.combo_box.currentTextChanged.connect(self.reset_view)
+            method_dropdown.combo_box.currentTextChanged.connect(partial(self.reset_view, new_tab))
 
     def load_all_files(self, new_tab: AllChirpContainerWindow):
         """Load the methods from the arbitrary code execution files.
@@ -389,7 +398,6 @@ class ViewTransformsBackend(QtCore.QObject):
             method_packets.append(MethodPacket(method_type, dropdown.getInnerText()))
             if method_type == _HISTORY_TRANSFORMS_INFO and method_packets[-1].method_name != _NO_METHOD:
                 all_data_group = True
-                
         if check_visibility and (not tab_to_run.isVisible() and not all_data_group):
             self.packets_in_flight -= 1
             return 
@@ -449,9 +457,9 @@ class ViewTransformsBackend(QtCore.QObject):
     def update_graph_type(self, tab_to_run: AllChirpContainerWindow) -> None:
         tab_to_run.update_graph_type(tab_to_run.widgets.graph_type.combo_box.currentText())
         if tab_to_run in self.current_data:
-            tab_to_run.setup_new_sub_plots(self.current_data[tab_to_run].time_stamp_data.data)
+            tab_to_run.setup_new_sub_plots(self.current_data[tab_to_run].time_stamp_data.data, self.current_data[tab_to_run].tertiary_data)
     
-    def reset_view(self) -> None:
+    def reset_view(self, tab_to_run: AllChirpContainerWindow) -> None:
         """Reset the data within the other process. 
 
         Args:
@@ -460,7 +468,10 @@ class ViewTransformsBackend(QtCore.QObject):
         self.timer.stop()
         self.empty_queues.wait()
         self.clear_data()
+        # tab_to_run.add_new_views(len(self.current_data[tab_to_run].time_stamp_data.data), self.current_data[tab_to_run].tertiary_data)
+        # tab_to_run.setup_new_sub_plots(self.current_data[tab_to_run].time_stamp_data.data, self.current_data[tab_to_run].tertiary_data)
         self.timer.start()
+        
 
     def handle_graphs(self, tab_to_run: AllChirpContainerWindow, transformed_data: TimeStampData, tertiary_data: TertiaryData) -> None:
         """Manage updating the graphs dependant on the shape of the data.
@@ -477,7 +488,7 @@ class ViewTransformsBackend(QtCore.QObject):
                     print(f"New tab plots {time.time()}")
                     
                 for current_chirp_data, transformed_chirp_data in zip(self.current_data[tab_to_run].time_stamp_data.data, transformed_data.data):
-                    if len(current_chirp_data.shape) > 2 and current_chirp_data.shape != transformed_chirp_data.shape:
+                    if len(current_chirp_data.shape) > 2 and current_chirp_data.shape[0] != transformed_chirp_data.shape[0]:
                         tab_to_run.setup_new_sub_plots(transformed_data.data, tertiary_data)
 
                         break

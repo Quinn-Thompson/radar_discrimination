@@ -62,10 +62,13 @@ class CreateLine():
         self.starting_frequency = starting_frequency
         self.ending_frequency = ending_frequency
         self.chirp = chirp
+        
+        self.sampling_rate: Optional[int] = None
         self.tx_power_level: Optional[int] = None
         self.lp_cutoff_Hz: Optional[int] = None
         self.hp_cutoff_Hz: Optional[int] = None
         self.if_gain_dB: Optional[int] = None
+        self.num_samples: Optional[int] = None
         if chirp:
             self.chirp_sequence = 0
     

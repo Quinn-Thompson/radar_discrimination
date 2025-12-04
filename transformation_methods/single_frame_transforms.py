@@ -18,7 +18,10 @@ from numpy.typing import NDArray
 from scipy import signal
 from gui_backend.helpers import CreateLine, TertiaryData, Label
 from typing import List
-
+from scipy.signal import butter, lfilter
+from gui_backend.sub_backend.networks import SmallAutoEncoder
+import torch
+from sklearn.manifold import TSNE
 
 class RecreateChirp():
     def __init__(self, chirp_info_list: List[CreateLine], allowed_size: int):
@@ -123,10 +126,16 @@ def t_view_text(chirp_info_list: List[CreateLine]):
     my_text = [["test11", "test12"], ["test21", "test22"]]
     return [np.array(my_text)]
 
-def t_avg_difference(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
-    if len(frame_list) != 3:
-        raise TypeError
+def t_difference(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
+    z_axis_label = "Differential"
+    tertiary_data.graph_info.y_axis_label = None
+    tertiary_data.graph_info.z_axis_label = Label(z_axis_label, tertiary_data.graph_info.z_axis_label.units)
+    tertiary_data.graph_info.tab_names = ["Differential Average"]
+    differential = frame_list[1] - frame_list[2]
+    return [differential], tertiary_data
 
+
+def t_avg_difference(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
 
     z_axis_label = f"Averaged {tertiary_data.graph_info.z_axis_label.name} Along {tertiary_data.graph_info.y_axis_label.name}"
     tertiary_data.graph_info.y_axis_label = None
@@ -135,6 +144,84 @@ def t_avg_difference(frame_list: List[NDArray[np.float64]], tertiary_data: Terti
     differential = np.array(np.average(frame_list[1] - frame_list[2]))[None]
     return [differential], tertiary_data
 
+def t_sqrt_avg_difference(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
 
-# def t_train_auto_encoder(frame_list: List[NDArray[np.float64]], chirp_info_list: List[CreateLine], tertiary_data: TertiaryData):
+    average_differential, tertiary_data = t_avg_difference(frame_list, tertiary_data)
+
+    tertiary_data.graph_info.tab_names = ["Sqrt Differential Average"]
+    return [np.sqrt(np.abs(frame)) for frame in average_differential], tertiary_data
+
+
+def butter_lowpass(cutoff, fs, order=5):
+    b, a = butter(order, cutoff / (0.5 * fs), btype='low')
+    return b, a
+
+def apply_lowpass(signal, cutoff, fs, order=5):
+    b, a = butter_lowpass(cutoff, fs, order)
+    return lfilter(b, a, signal)
+
+
+
+def simulate_fmcw_return(tx_chirp, fs, target_range, attenuation=0.8):
+    c = 3e8
+    tau = 2 * target_range / c          # round-trip delay
+    delay_samples = int(round(tau * fs))  # sample delay
     
+    # 1. Create delayed copy
+    rx = np.zeros_like(tx_chirp)
+    if delay_samples < len(tx_chirp):
+        rx[delay_samples:] = tx_chirp[:-delay_samples] * attenuation
+
+    # 2. Mixing (TX × RX)
+    mixed = tx_chirp * rx
+
+    # 3. LPF 500 kHz
+    mixed = apply_lowpass(mixed, 500e3, fs, order=6)
+
+    # 4. LPF 20 kHz
+    baseband = apply_lowpass(mixed, 20e3, fs, order=6)
+
+    return baseband
+
+
+def t_simulated_return(chirp_info_list: List[CreateLine]):
+    sample_durations = [len(chirp.num_samples) for chirp in chirp_info_list]
+    radius_to_target = 7
+    speed_of_light = 3.0e8
+    chirp_recreator = RecreateChirp(chirp_info_list, max(sample_durations))
+    fs = chirp_info_list[0].sampling_rate
+
+    simulated = []
+    for tx_chirp in chirp_recreator.recreate_single_chirp():
+        out = simulate_fmcw_return(tx_chirp, fs, radius_to_target)
+        simulated.append(out)
+    return simulated
+# for chirp in chirp_recreator:
+#     if_signal = 2 * 
+
+def t_go_thru_network(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
+    collapsed_data = t_beam_form(frame_list)
+     
+    fresh_model = SmallAutoEncoder().cuda()
+    fresh_model.load_state_dict(torch.load("./models/best_small_autoencoder_2.pth"))
+    fresh_model.eval()
+    output = fresh_model(torch.from_numpy((collapsed_data[0][0][:16]+ 1) / 2).float().cuda(non_blocking=True))
+    
+    return [output.cpu().detach().numpy()]
+
+def t_reduced_dim(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
+    collapsed_data = t_beam_form([np.concatenate([frame for frame in frame_list], axis=2)])
+    
+    fresh_model = SmallAutoEncoder().cuda()
+    fresh_model.load_state_dict(torch.load("./models/best_small_autoencoder_2.pth"))
+    fresh_model.eval()
+    _ = fresh_model(torch.from_numpy((collapsed_data[0][0][:16]+ 1) / 2).float().cuda(non_blocking=True))
+    
+    return [fresh_model.reduced_dimensions.output.cpu().detach().numpy()]
+
+tsne = TSNE(n_components=2, verbose=1, perplexity=30, n_iter=300)
+ 
+def t_sne_reduced_dim(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
+    reduced_dim = t_reduced_dim(frame_list, tertiary_data)
+    tsne_results = tsne.fit_transform(reduced_dim[0])
+    return [tsne_results]

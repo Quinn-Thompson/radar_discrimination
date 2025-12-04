@@ -3,7 +3,7 @@ from gui.sub_widgets.train_network import TrainNetwork
 from gui_backend.helpers import TimeStampData, TertiaryData, PerSubPlot, Label
 from gui_backend.sub_backend.view_transforms import ViewTransformsBackend, _ALLOWED_LENGTH
 from gui.main_window import MainWindow
-from gui.helpers import Models
+from gui.helpers import Models, LossType
 import numpy as np
 import torch
 from numpy.typing import NDArray
@@ -12,10 +12,10 @@ from typing import List, Optional
 from PyQt6 import QtCore, QtWidgets
 from pathlib import Path
 import os
-from typing import Callable
+from typing import Callable, Dict
 from random import sample
 from torch.autograd import Variable
-from gui_backend.sub_backend.networks import AutoEncoder
+from gui_backend.sub_backend.networks import AutoEncoder, Network, SmallAutoEncoder
 import time
 import multiprocessing as mp
 from dataclasses import dataclass
@@ -23,8 +23,14 @@ from enum import Enum
 from queue import Empty
 
 
-model_lookup = {
-    Models.AUTOENCODER.name: AutoEncoder
+model_lookup: Dict[str, Network] = {
+    Models.AUTOENCODER.name: AutoEncoder,
+    Models.SMALLAUTOENCODER.name: SmallAutoEncoder
+}
+
+loss_lookup = {
+    LossType.MSE.name: torch.nn.MSELoss(),
+    LossType.MAE.name: torch.nn.L1Loss(),
 }
 
 @dataclass
@@ -140,8 +146,9 @@ class TrainBackend(QtCore.QObject):
         batch_size = int(self.sub_window.network_info.widgets.batch_count.getInnerText())
         time_between_draws = float(self.sub_window.network_info.widgets.time_between_draws.getInnerText())
         epoch_count = int(self.sub_window.network_info.widgets.epoch_count.getInnerText())
+        loss_type = self.sub_window.network_info.widgets.loss_type.getInnerText()
         pass_in_data = PassInData(
-            data_path, label_path, train_val_split, batch_size, learning_rate, model, time_between_draws, epoch_count
+            data_path, label_path, train_val_split, batch_size, learning_rate, model, time_between_draws, epoch_count, loss_type
         )
         
         self.pass_in_queue.put(pass_in_data)
@@ -163,6 +170,7 @@ class PassInData:
     model: str
     time_between_draws: float
     epoch_count: int
+    loss_type: str
 
 def nn_operation_loop(event_queue: mp.Queue, pass_in_queue: mp.Queue, passback_queue: mp.Queue):
     while True:
@@ -226,106 +234,115 @@ class TrainNetworks():
         dataloader_validation = torch.utils.data.DataLoader(dataset_val, batch_size=self.pass_in_data.batch_size, shuffle=True,  num_workers=4, pin_memory=True)
 
         model = model_lookup[self.pass_in_data.model]()
-        model_c = model.cuda()
+        model_cuda = model.cuda()
         
         # adam optimizer, default beta 1 and beta 2, only learning rate set
-        parameters = list(model_c.parameters())
+        parameters = list(model_cuda.parameters())
         optimizer = torch.optim.Adam(parameters, lr=self.pass_in_data.learning_rate)
         # create graph
         # test_batch, _ = next(iter(dataloader_train))
         # yhat = model_c(test_batch.float().cuda())
         # make_dot(yhat, params=dict(model_c.named_parameters())).render("rnn_torchviz", format="png")
-        self.epoch_iteration(model_c, dataloader_train, dataloader_validation, optimizer)
+        self.epoch_iteration(model_cuda, dataloader_train, dataloader_validation, optimizer)
 
     @staticmethod
-    def operate_nn(input_image_batch, output_label_batch, model, loss_func):
+    def operate_nn(input_image_batch, output_label_batch, model, loss_function):
         # convert image inputs to gpu
         cinput_image_batch = input_image_batch.cuda(non_blocking=True)
         coutput_label_batch = output_label_batch.cuda(non_blocking=True)
         # encode the image, get max pool indeces and skip connections
         nn_output_batch = model(cinput_image_batch)
         # calculate loss using MSE
-        loss = loss_func(nn_output_batch, coutput_label_batch)
+        loss = loss_function(nn_output_batch, coutput_label_batch)
 
         return loss, nn_output_batch
         
 
     def epoch_iteration( 
         self,
-        model_cuda, 
+        model_cuda: Network, 
         dataloader_train: Dataset, 
         dataloader_val: Dataset,
         optimizer: torch.optim.Optimizer,
     ):
         # mean squared error loss calculation
-        loss_function = torch.nn.MSELoss()
-
+        lowest_val_loss = float("inf")
         for epoch in range(self.pass_in_data.epoch_count):
+            print(f"Epoch: {epoch}")
             self.current_epoch = epoch
             ####################
             # BEGIN TRAINING   #
             ####################
             model_cuda.train()
-            self.train_network(dataloader_train, model_cuda, loss_function, optimizer=optimizer)
+            self.train_network(dataloader_train, model_cuda, optimizer=optimizer)
         
             # enact validation
             model_cuda.eval()
             # no gradiant activation
             with torch.no_grad():
-                self.train_network(dataloader_val, model_cuda, loss_function)
+                validation_loss, input_data_batch, output_label_batch = self.train_network(dataloader_val, model_cuda)
             
-            #cv2.imwrite('output_per_epoch/network_input_and_output_at_epoch_' + str(i+1) + '.jpeg', display_info(image_valc[0], image_n_valc[0], output[0], validation=True)*255)
             # if this is the new lowest validation loss
-            # if self._graph_info['val_loss_decay'][-1] < lowest_val_loss:
-            #     lowest_val_loss = self._graph_info['val_loss_decay'][-1]
-            #     print(f'new minimum at epoch {i}, saved')
-            #     # save the network to hard drive
-            #     torch.save([model_c],'./database/model/' + file_name + '.pkl')
-            # print info to user
-            # append list for usage in printing graph
-
-            # for measurement, value in measure_figure.items():
-            #     value.set_data(self._graph_info['!epoch'], self._graph_info[measurement])
+            if validation_loss < lowest_val_loss:
+                print(f'new minimum at epoch {epoch}, saved')
+                # save the network to hard drive
+                torch.save(model_cuda.state_dict(), "./models/best_small_autoencoder.pth")
+                fresh_model = SmallAutoEncoder().cuda()
+                fresh_model.load_state_dict(torch.load("./models/best_small_autoencoder.pth"))
+                fresh_model.eval()
+                output = fresh_model(input_data_batch.float().cuda(non_blocking=True))
+                print(torch.max(torch.abs(output - output_label_batch)))
 
         
-    def train_network(self, dataloader: Dataset, model_c, loss_func: Callable, optimizer = None):
-        validation = False
-        if optimizer is None:
-            validation = True
-        
+    def train_network(self, dataloader: Dataset, model_cuda: Network, optimizer = None):
+
+        loss_function = loss_lookup[self.pass_in_data.loss_type]
         previous_draw = time.time()
         # run through each batch
         for data_index, (input_data_batch, output_label_batch) in enumerate(dataloader):
             # soemtimes loads in batch size of 16
-            if input_data_batch.size()[0] == self.pass_in_data.batch_size:                
+            if input_data_batch.size()[0] == self.pass_in_data.batch_size:
+                last_input = input_data_batch    
                 # if there is an optimizer, IE we are training
-                if not validation:
+                if optimizer is not None:
                     optimizer.zero_grad()
 
-                loss, nn_output_batch = self.operate_nn(input_data_batch.float(), output_label_batch.float(), model_c, loss_func)
-                if not validation:
+                loss, nn_output_batch = self.operate_nn(input_data_batch.float(), output_label_batch.float(), model_cuda, loss_function)
+                if optimizer is not None:
                     # backwards propogation based on loss
                     loss.backward()
                     optimizer.step()
 
-                current_time = time.time()
-
-                if current_time - previous_draw > self.pass_in_data.time_between_draws:
-                    self.draw_index += 1
-                    # re dimensionalize for drawing
-                    input_values = input_data_batch[:16].cpu().detach().numpy()[None, ...]
-                    known_values = output_label_batch[:16].cpu().detach().numpy()[None, ...]
-                    guessed_values = nn_output_batch[:16].cpu().detach().numpy()[None, ...]
-                    if f"epoch {self.current_epoch}" not in self.tertiary_data.notable_events:
-                        self.tertiary_data.notable_events[f"epoch {self.current_epoch}"] = self.draw_index
-                    time_stamp_values = TimeStampData("data", current_time, [input_values, guessed_values, known_values])
-                    self.passback_queue.put(PassbackData(time_stamp_values, self.tertiary_data))
+                if self.draw_to_screen(model_cuda, previous_draw, input_data_batch, output_label_batch, nn_output_batch):
                     previous_draw = time.time()
+        
+        return loss, last_input, nn_output_batch
 
+    def draw_to_screen(
+        self, 
+        model_cuda: Network, 
+        previous_draw: float, 
+        input_data_batch: torch.Tensor, 
+        output_label_batch: torch.Tensor, 
+        nn_output_batch: torch.Tensor
+    ):
+        current_time = time.time()
 
-                # self.magnitude_difference = np.sum(self.known_values - self.guessed_values, axis=0) / np.shape(self.known_values)[0]
-                # # throw data to the output in the gui
-                # running_loss = self.running_exp_avg(running_loss, loss.item())
-                # # track Mean squared error for each iteration
-                # running_mse = self.running_exp_avg(running_mse, np.sum((self.magnitude_difference) ** 2, axis=0))
-                # if we are on the nth epoch to update
+        if current_time - previous_draw > self.pass_in_data.time_between_draws:
+            self.draw_index += 1
+            # re dimensionalize for drawing
+            input_values = input_data_batch[:16].cpu().detach().numpy()[None, ...]
+            known_values = output_label_batch[:16].cpu().detach().numpy()[None, ...]
+            guessed_values = nn_output_batch[:16].cpu().detach().numpy()[None, ...]
+            if f"epoch {self.current_epoch}" not in self.tertiary_data.notable_events:
+                self.tertiary_data.notable_events[f"epoch {self.current_epoch}"] = self.draw_index
+            
+            tab_names, pertinant_info = model_cuda.return_pertinent_information()
+            
+            self.tertiary_data.graph_info.tab_names.extend(tab_names)
+            to_draw = [input_values, guessed_values, known_values]
+            to_draw.extend([info_gpu[:16].cpu().detach().numpy()[None, ...] for info_gpu in pertinant_info])
+            time_stamp_values = TimeStampData("data", current_time, to_draw)
+            self.passback_queue.put(PassbackData(time_stamp_values, self.tertiary_data))
+            return True
+        return False

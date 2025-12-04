@@ -34,11 +34,12 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
         self.current_boundaries = Boundaries(minimum=float("-inf"), maximum=float("inf"))
         self.ci.setMinimumHeight(400)
 
-    def setup_plots(self, plot_count: int, tertiary_data: TertiaryData):
+    def setup_plots(self, plot_count: int, tertiary_data: Optional[TertiaryData]):
         self.current_boundaries = Boundaries(minimum=float("-inf"), maximum=float("inf"))
         for receiver in range(plot_count):
+
             if receiver >= len(tertiary_data.graph_info.per_subplot_info):
-                plot_title = "Receiver"
+                plot_title = f"Receiver {receiver}"
             else:
                 plot_title = tertiary_data.graph_info.per_subplot_info[receiver].sub_plot_name
             subplot = self.ci.addPlot(title=plot_title)
@@ -108,15 +109,15 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
                 sub_plot.setRect(QtCore.QRectF(0, 0, 300, 300))
 
             elif self.graph_type == GraphTypes.plot_2d.value:
-                ymin, ymax = plot.getViewBox().viewRange()[1]
-                xs = []
-                ys = [] 
-                for notable_event, notable_index in tertiary_data.notable_events.items():
-                    if notable_event not in self.notable_events:
-                        xs.extend([notable_index, notable_index, np.nan])
-                        ys.extend([ymin, ymax, np.nan])
+                # ymin, ymax = plot.getViewBox().viewRange()[1]
+                # xs = []
+                # ys = [] 
+                # for notable_event, notable_index in tertiary_data.notable_events.items():
+                #     if notable_event not in self.notable_events:
+                #         xs.extend([notable_index, notable_index, np.nan])
+                #         ys.extend([ymin, ymax, np.nan])
                 
-                self.lines[receiver].setData(xs, ys)
+                # self.lines[receiver].setData(xs, ys)
 
                 
                 if transformed_data.dtype == np.str_ or transformed_data.dtype.str.startswith("<U"):
@@ -141,7 +142,10 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
         self.sub_plots = []
         self.ci.update()
             
-    def graphs_change(self, dummy_transformed_data: NDArray[np.float64], tertiary_data: TertiaryData):
+    def graphs_change(self, dummy_transformed_data: NDArray[np.float64], tertiary_data: Optional[TertiaryData]):
+        if tertiary_data is None:
+            tertiary_data = TertiaryData()
+        
         self.clear_graph()
         dummy_size = len(dummy_transformed_data.shape)
         if dummy_size == 3:
@@ -166,11 +170,19 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
             )
         
         for receiver, plot in enumerate(self.plots):
-            plot.setLabel(
-                "bottom", 
-                tertiary_data.graph_info.per_subplot_info[receiver].x_axis_label.name, 
-                units=tertiary_data.graph_info.per_subplot_info[receiver].x_axis_label.units
-            )
+            try:
+                plot.setLabel(
+                    "bottom", 
+                    tertiary_data.graph_info.per_subplot_info[receiver].x_axis_label.name, 
+                    units=tertiary_data.graph_info.per_subplot_info[receiver].x_axis_label.units
+                )
+            except IndexError:
+                plot.setLabel(
+                    "bottom", 
+                    "Long Time", 
+                    units="Bins(s)"
+                )  
+            
             if self.graph_type == GraphTypes.colormesh.value:
                 image_item = pg.ImageItem()
                 plot.addItem(image_item)
@@ -268,9 +280,9 @@ class AllChirpContainerWindow(QtWidgets.QFrame):
     def showEvent(self, event):
         super().showEvent(event)
         if self.current_data is not None:
-            self.update_views(self.current_data)
+            self.update_views(self.current_data, None)
     
-    def add_new_views(self, view_count: int, tertiary_data: TertiaryData):
+    def add_new_views(self, view_count: int, tertiary_data: Optional[TertiaryData]):
         self.plots_set = False
 
         for chirp_tab in self.chirp_tabs:
@@ -278,8 +290,10 @@ class AllChirpContainerWindow(QtWidgets.QFrame):
         self.chirp_tabs: List[SingleChirpViewWindow] = []
         for chirp_number in range(view_count):
             self.chirp_tabs.append(SingleChirpViewWindow(self.graph_type, self.glyph_cache))
-            
-            if chirp_number >= len(tertiary_data.graph_info.tab_names):
+            # cannot be evaluated in or because it will error out
+            if tertiary_data is None:
+                self.chirp_tabs_bar.addTab(self.chirp_tabs[-1], f"Chirp {chirp_number}")   
+            elif chirp_number >= len(tertiary_data.graph_info.tab_names):
                 self.chirp_tabs_bar.addTab(self.chirp_tabs[-1], f"Chirp {chirp_number}")            
             else:
                 self.chirp_tabs_bar.addTab(self.chirp_tabs[-1], tertiary_data.graph_info.tab_names[chirp_number])

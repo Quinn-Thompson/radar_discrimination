@@ -177,6 +177,8 @@ class SignalWindowBackend():
             current_movement_list[-1].hp_cutoff_Hz = current_sequence.chirp.hp_cutoff_Hz
             current_movement_list[-1].lp_cutoff_Hz = current_sequence.chirp.lp_cutoff_Hz
             current_movement_list[-1].tx_power_level = current_sequence.chirp.tx_power_level
+            current_movement_list[-1].sampling_rate = current_sequence.chirp.sample_rate_Hz
+            current_movement_list[-1].num_samples = current_sequence.chirp.num_samples
             
             current_movement_list.append(CreateLine(WaveformSections.RAMP.name, ramp_time_period - WaveformSections.ADC_DELAY.value, pre_ramp_frequency, current_sequence.chirp.end_frequency_Hz, chirp=True))                        
             current_movement_list[-1].chirp_sequence = current_sequence.chirp_sequence
@@ -184,6 +186,8 @@ class SignalWindowBackend():
             current_movement_list[-1].hp_cutoff_Hz = current_sequence.chirp.hp_cutoff_Hz
             current_movement_list[-1].lp_cutoff_Hz = current_sequence.chirp.lp_cutoff_Hz
             current_movement_list[-1].tx_power_level = current_sequence.chirp.tx_power_level
+            current_movement_list[-1].sampling_rate = current_sequence.chirp.sample_rate_Hz
+            current_movement_list[-1].num_samples = current_sequence.chirp.num_samples
             
             current_movement_list.append(CreateLine(WaveformSections.RAMP_END.name, WaveformSections.RAMP_END.value, current_sequence.chirp.end_frequency_Hz, end_ramp_frequency))
             current_movement_list.append(CreateLine(WaveformSections.LOWER_RAMP.name, WaveformSections.LOWER_RAMP.value, end_ramp_frequency, pre_pa_frequnecy))

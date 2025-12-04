@@ -9,7 +9,7 @@ from sklearn.preprocessing import StandardScaler
 
 _NUM_BINS = 300
 
-def t_maintain(frame_history: List[List[NDArray[np.float64]]], tertiary_data: TertiaryData) -> List[NDArray[np.float64]]:
+def t_maintain(frame_history: List[List[NDArray[np.float64]]], tertiary_data: List[TertiaryData]) -> List[NDArray[np.float64]]:
     history_length = len(frame_history)
     new_output = []
     for first_frames in frame_history[0]:
@@ -17,9 +17,35 @@ def t_maintain(frame_history: List[List[NDArray[np.float64]]], tertiary_data: Te
     for chirp in range(len(new_output)):
         for frame_index, frame in enumerate(frame_history):
             new_output[chirp][..., frame_index*first_frames.shape[-1]:(frame_index+1)*first_frames.shape[-1]] = frame[chirp][..., :]
-    for tab_index, tab_name in enumerate(tertiary_data.graph_info.tab_names):
-        tertiary_data.graph_info.tab_names[tab_index] = tab_name + "History"
+    for tab_index, tab_name in enumerate(tertiary_data[-1].graph_info.tab_names):
+        tertiary_data[-1].graph_info.tab_names[tab_index] = tab_name + "History"
     return new_output, tertiary_data
+
+def t_average_removed(frame_history: List[List[NDArray[np.float64]]], tertiary_data: TertiaryData) -> List[NDArray[np.float64]]:
+    averaged_outputs = [np.zeros_like(frame_history[0][chirp]) for chirp in len(frame_history[0])]
+    for frame in frame_history:
+        for averaged_output in averaged_outputs:
+            averaged_output += frame
+    
+    for averaged_output in averaged_outputs:
+        averaged_output /= len(frame_history)
+        
+        
+    return averaged_outputs, tertiary_data
+
+COLOR_MAP = {
+    0: "blue",
+    1: "red",
+    2: "green",
+    3: "orange",
+}
+
+def check_space(frame_history: List[List[NDArray[np.float64]]], tertiary_data: List[TertiaryData]) -> List[NDArray[np.float64]]:
+    for frame, tertiary in zip(frame_history, tertiary_data):
+        receiver = frame[0]  # Adjust if needed
+        label = tertiary.fundamentals["label"]
+        color = COLOR_MAP[tertiary.fundamentals["label"]]
+
 
 def t_cluster(frame_history: List[List[NDArray[np.float64]]]) -> List[NDArray[np.float64]]:
     # create a list (for each different chirp sequence) for 

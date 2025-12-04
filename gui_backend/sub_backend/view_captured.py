@@ -56,11 +56,11 @@ class TimeStampedSession:
         
         for time_stamp_index, time_stamp_data in enumerate(self.time_stamp_data):
             chirp_size = 0
-            for chirp_index, chirp_data in enumerate(new_timestamp[time_stamp_index].data):
+            for chirp_index, chirp_data in enumerate(time_stamp_data.data):
                 chirp_size += chirp_data.shape[-1]*(len(ordered_dict) + 1)
-                                   
+                                
             new_array = np.empty(chirp_data.shape[:-1] + (chirp_size, ))
-            
+
             start_index = 0
 
             for chirp_index, chirp_data in enumerate(time_stamp_data.data):
@@ -78,18 +78,18 @@ class TimeStampedSession:
         
         del self._temporary_data
 
-"""        for time_stamp_index, time_stamp_data in enumerate(self.time_stamp_data):
+# """        for time_stamp_index, time_stamp_data in enumerate(self.time_stamp_data):
             
-            for chirp_index, chirp_data in enumerate(time_stamp_data.data):
-                new_array = np.empty(chirp_data.shape[:-1] + (chirp_data.shape[-1]*(len(ordered_dict) + 1), ))
-                new_array[..., :chirp_data.shape[-1]] = time_stamp_data.data[chirp_index]
-                for new_index, new_timestamp in enumerate(ordered_dict.values()):
-                    last_timestamp = min(len(new_timestamp)-1, time_stamp_index)
-                    new_array[..., (new_index+1)*chirp_data.shape[-1]:(new_index+2)*chirp_data.shape[-1]] = new_timestamp[last_timestamp].data[chirp_index]
+#             for chirp_index, chirp_data in enumerate(time_stamp_data.data):
+#                 new_array = np.empty(chirp_data.shape[:-1] + (chirp_data.shape[-1]*(len(ordered_dict) + 1), ))
+#                 new_array[..., :chirp_data.shape[-1]] = time_stamp_data.data[chirp_index]
+#                 for new_index, new_timestamp in enumerate(ordered_dict.values()):
+#                     last_timestamp = min(len(new_timestamp)-1, time_stamp_index)
+#                     new_array[..., (new_index+1)*chirp_data.shape[-1]:(new_index+2)*chirp_data.shape[-1]] = new_timestamp[last_timestamp].data[chirp_index]
                    
-                self.time_stamp_data[time_stamp_index].data[chirp_index] = new_array
+#                 self.time_stamp_data[time_stamp_index].data[chirp_index] = new_array
         
-        del self._temporary_data"""
+#         del self._temporary_data"""
 
 class PlayWorker(QtCore.QObject):
     move_to_next_frame = QtCore.pyqtSignal()
@@ -276,6 +276,7 @@ class ViewCapturedBackend(QtCore.QObject):
        
             for session in self.session_dict.values():
                 session.create_concatination(self.sub_window.widgets.load_operation.getInnerText())
+            self.set_session(0, True)
             self.on_time_stamp_change(0)
 
     def find_location_to_save(self):
@@ -321,6 +322,7 @@ class ViewCapturedBackend(QtCore.QObject):
         
     def set_session(self, session_location: int, callback: bool = True) -> None:
         self.current_session = max(min(session_location, len(self.session_dict) -1 ), 0)
+        self.sub_window.render_window.widgets.array_title.setText(self.index_to_label[self.current_session])
         if callback:
             self.set_slider_pos(self.current_session)
     
@@ -452,7 +454,6 @@ class ViewCapturedBackend(QtCore.QObject):
         
         for sampling_number, sampling_data in enumerate(transform_data.data):
             for section, save_data in enumerate(self.post_transform_manipulation(sampling_data)):
-                print(f"saving {section}")
                 np.save(f"{location}/{transform_data.name}/{datetime.fromtimestamp(transform_data.time_stamp).strftime(_DATETIME_FORMAT)}_{section}_{sampling_number}", save_data)
 
     def apply_transform_and_save(self):

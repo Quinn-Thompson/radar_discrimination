@@ -3,7 +3,7 @@ from gui.sub_widgets.render_window import RenderWindowControl
 from gui.sub_widgets.view_transforms import ViewTransforms
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
-from gui.helpers import WindowWidgets, LineEditWithText, ComboBoxWithText, Models
+from gui.helpers import WindowWidgets, LineEditWithText, ComboBoxWithText, Models, LossType
 
 class NetworkInfoWidgets(WindowWidgets):
     """The widgets for the rx transforms.
@@ -15,6 +15,7 @@ class NetworkInfoWidgets(WindowWidgets):
         self.epoch_count = LineEditWithText("Number Of Epochs")
         self.batch_count = ComboBoxWithText("Batch Count", ["16", "32", "64", "128", "256"])
         self.train_val_split = ComboBoxWithText("Training Percent", ["80", "90", "95", "98", "99"])
+        self.loss_type = ComboBoxWithText("Loss", [loss.name for loss in LossType])
         self.data_file_explorer = QtWidgets.QPushButton("Data Explorer")
         self.data_location = LineEditWithText("Data Location")
         self.label_file_explorer = QtWidgets.QPushButton("Label Explorer")
@@ -39,6 +40,7 @@ class NetworkInfoWindow(QtWidgets.QFrame):
         self.root_layoutV.addWidget(self.widgets.data_location, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.root_layoutV.addWidget(self.widgets.label_file_explorer, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.root_layoutV.addWidget(self.widgets.label_location, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.root_layoutV.addWidget(self.widgets.loss_type, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.root_layoutV.addWidget(self.widgets.epoch_count, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.root_layoutV.addWidget(self.widgets.learning_rate, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.root_layoutV.addWidget(self.widgets.batch_count, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
