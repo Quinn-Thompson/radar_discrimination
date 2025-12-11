@@ -113,6 +113,7 @@ def different_method_calls(
         {"frame_history": to_transform_data, "tertiary_data": tertiary_data},
         {"frame_history": to_transform_data, "chirp_info_list": chirp_info_list},
         {"frame_history": to_transform_data},
+        {"chirp_info_list": chirp_info_list, "tertiary_data": tertiary_data},
         {"chirp_info_list": chirp_info_list},
         [to_transform_data, chirp_info_list, tertiary_data],
         [to_transform_data, chirp_info_list],
@@ -152,10 +153,18 @@ def handle_methods(
     Returns:
         A list (each chirp sequence) of frames (receiver, chirp per frame, sample per chirp)
     """
-    transformed_data = data_packet.frame_data.data
-    transformed_tertiary_data = tertiary_data
-    if transformed_tertiary_data is not None:
+    if data_packet.frame_data is not None:
+        transformed_data = data_packet.frame_data.data
+        frame_name = data_packet.frame_data.name
+        time_stamp = data_packet.frame_data.time_stamp
+        transformed_tertiary_data = tertiary_data
         transformed_tertiary_data.fundamentals["label"] = data_packet.frame_data.name
+    else:
+        transformed_data = None
+        frame_name = "simulated"
+        time_stamp = time.time()
+        transformed_tertiary_data = TertiaryData()
+        
     if data_packet.tab_to_update not in data_list.frame_data and transformed_data is not None: 
         data_list.frame_data[data_packet.tab_to_update] = []
         data_list.tertiary_data[data_packet.tab_to_update] = []
@@ -198,10 +207,10 @@ def handle_methods(
             else:
                 data_list.frame_data[data_packet.tab_to_update] = [transformed_data]
                 data_list.tertiary_data[data_packet.tab_to_update] = [transformed_tertiary_data]
-                
+       
     return TimeStampData(
-        data_packet.frame_data.name, 
-        data_packet.frame_data.time_stamp, 
+        frame_name, 
+        time_stamp, 
         transformed_data, 
         transform=transform_name
     ), transformed_tertiary_data

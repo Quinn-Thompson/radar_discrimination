@@ -284,10 +284,10 @@ class TrainNetworks():
         validation_files=file_array_shuffle[int(len(file_array_shuffle)*self.pass_in_data.train_val_split*0.01):]
         
         dataset_train = Dataset(
-            self.pass_in_data.data_path, training_files, noise_path=self.pass_in_data.noise_path, label_map=None
+            self.pass_in_data.data_path, training_files, noise_path=self.pass_in_data.noise_path, label_map=label_map
         )
         dataset_val = Dataset(
-            self.pass_in_data.data_path, validation_files, noise_path=self.pass_in_data.noise_path, label_map=None
+            self.pass_in_data.data_path, validation_files, noise_path=self.pass_in_data.noise_path, label_map=label_map
         )
 
         dataloader_train = torch.utils.data.DataLoader(dataset_train, batch_size=self.pass_in_data.batch_size, shuffle=True, num_workers=4, pin_memory=True)

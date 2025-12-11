@@ -18,8 +18,8 @@ from numpy.typing import NDArray
 from scipy import signal
 from gui_backend.helpers import CreateLine, TertiaryData, Label, PerSubPlot
 from typing import List
-from scipy.signal import butter, lfilter
-from gui_backend.sub_backend.networks import AutoEncoderSmall
+from scipy.signal import butter, sosfilt, filtfilt
+from gui_backend.sub_backend.networks import AutoEncoderSmall, Classifier
 import torch
 from scipy.fft import ifft
 from sklearn.manifold import TSNE
@@ -178,39 +178,109 @@ def butter_bandpass(lowcut, highcut, fs, order=5):
     nyq = 0.5 * fs
     low = lowcut / nyq
     high = highcut / nyq
-    b, a = butter(order, [low, high], btype='band')
-    return b, a
+    sos  = butter(order, [low, high], btype='band', output="sos")
+    return sos 
 
 def apply_bandpass(signal, lowcut, highcut, fs, order=5):
-    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
-    return lfilter(b, a, signal)
+    sos  = butter_bandpass(lowcut, highcut, fs, order=order)
+    return sosfilt(sos, signal)
 
-def simulate_fmcw_return(tx_chirp, fs, target_range, attenuation=0.8):
+speed_of_light = 3e8
+tgt_rng = 1
+delay = (2 * tgt_rng)/speed_of_light #6.67 ns
+fs = 4e6
+sim_rate = 132e9
+beta = .625e9
+duration = 67.1125e-6
+adc_delay = 3.1125e-6
+n_samples = 256 #int(np.ceil((tx_duration-adc_delay)sim_rate))
+
+f0_list = np.arange(58,63,.625)*1e9+beta/duration * adc_delay
+
+def mini_chirp(f0, fs=fs, n_samples=n_samples, beta=beta, duration=duration, delay=delay):
+    t = np.arange(0,n_samples)/fs
+    phase = (2*np.pi*beta*delay/duration)*t+2*np.pi*f0-(np.pi*beta/duration)*delay**2
+    return np.cos(phase)
+
+def t_test(chirp_info_list: List[CreateLine], tertiary_data: TertiaryData):
+    a = np.zeros((4*n_samples),np.float32)
+    for i in range(4):
+        a[i*n_samples:(i+1)*n_samples] = mini_chirp(f0_list[i])
+        
+
+    return [a[None]], tertiary_data
+
+def simulate_fmcw_return(tx_chirp, sample_rate, target_range):
+    up_sample_qoutient = 1000
+    upsample = np.linspace(np.min(tx_chirp), np.max(tx_chirp), up_sample_qoutient)
+    new_sample_rate = up_sample_qoutient * sample_rate
     speed_of_light = 3e8
-    delay_time = 2 * target_range / speed_of_light
-    delay_samples = int(round(delay_time * fs))  # sample delay
+    delay_time = (2 * target_range) / speed_of_light
+    delay_samples = int(round(delay_time * new_sample_rate))
+    phase = 2 * np.pi * np.cumsum(upsample) / new_sample_rate
+    tx_time = np.exp(1j * phase)
+    rx_time = np.zeros_like(upsample, dtype=complex)
+    lambda_ = speed_of_light / upsample
+    attenuation = 3.0e11 * (lambda_ / (4 * np.pi * target_range))**4 * 1
+        
+    noise = np.random.normal(0, 0.002, up_sample_qoutient - delay_samples)
+
+    if delay_samples < len(upsample):
+        rx_time[delay_samples:] = tx_time[:-delay_samples] * np.sqrt(attenuation[:-delay_samples]) + noise
     
-    rx = np.zeros_like(tx_chirp)
-    if delay_samples < len(tx_chirp):
-        rx[delay_samples:] = tx_chirp[:-delay_samples] * attenuation
+    mixed = tx_time * np.conj(rx_time)
+    
+    bandpassed_signal = apply_bandpass(mixed.real, 20e3 * up_sample_qoutient, 500e3 * up_sample_qoutient, new_sample_rate, order=6)
+    downsample_indices = np.linspace(0, up_sample_qoutient-1, len(tx_chirp), dtype=int)
+    return_signal = bandpassed_signal[downsample_indices]
+    return return_signal
 
-    mixed = tx_chirp * rx
-    time_signal = ifft(mixed)
-    bandpassed_signal = apply_bandpass(time_signal, 20e3, 500e3, fs, order=6)
-
-    return bandpassed_signal
-def t_simulated_return(chirp_info_list: List[CreateLine]):
-    sample_durations = [len(chirp.num_samples) for chirp in chirp_info_list]
-    radius_to_target = 7
+def t_simulated_return(chirp_info_list: List[CreateLine], tertiary_data: TertiaryData):
+    sample_durations = [chirp.num_samples for chirp in chirp_info_list]
+    radius_to_target = 3.43
     chirp_recreator = RecreateChirp(chirp_info_list, max(sample_durations))
     simulated = []
     
     for tx_chirp in chirp_recreator.recreate_single_chirp():
         out = simulate_fmcw_return(tx_chirp, chirp_info_list[0].sampling_rate, radius_to_target)
-        simulated.append(out)
-    return simulated
-# for chirp in chirp_recreator:
-#     if_signal = 2 * 
+        simulated.append(out[None])
+    return simulated, tertiary_data
+
+def t_simulated_through_auto(chirp_info_list: List[CreateLine], tertiary_data: TertiaryData):
+    tertiary_data.fundamentals["color_map"] = {
+        "Reconstructed": (255, 0, 0),
+        "Original": (0, 0, 255),
+    }
+    tertiary_data.fundamentals["color_list"] = [color for color in tertiary_data.fundamentals["color_map"].values()]
+    
+    
+    sim_return, tertiary_data = t_test(chirp_info_list, tertiary_data)
+    fresh_model = AutoEncoderSmall().cuda()
+    fresh_model.load_state_dict(torch.load("./models/coolsmall_autoencoder.pth"))
+    fresh_model.eval()
+    output = np.empty(((2, ) + (sim_return[0].shape[-1], )))
+    output[0] = fresh_model(torch.from_numpy(sim_return[0][0] + 0.5).float().cuda(non_blocking=True)).cpu().detach().numpy()
+    output[1] = sim_return[0] + 0.5
+    tertiary_data.graph_info.per_subplot_info = [PerSubPlot()]
+    tertiary_data.graph_info.per_subplot_info[0].sub_plot_name = "Reconstructed Beam Form"
+    return [output], tertiary_data
+
+def t_simulated_through_class(chirp_info_list: List[CreateLine], tertiary_data: TertiaryData):
+    tertiary_data.fundamentals["color_map"] = {
+        "Reconstructed": (255, 0, 0),
+        "Original": (0, 0, 255),
+    }
+    tertiary_data.fundamentals["color_list"] = [color for color in tertiary_data.fundamentals["color_map"].values()]
+    
+    
+    sim_return, tertiary_data = t_test(chirp_info_list, tertiary_data)
+    fresh_model = Classifier().cuda()
+    fresh_model.load_state_dict(torch.load("./models/classifier.pth"))
+    fresh_model.eval()
+    output = fresh_model(torch.from_numpy(sim_return[0][0] + 0.5).float().cuda(non_blocking=True)).cpu().detach().numpy()
+    tertiary_data.graph_info.per_subplot_info = [PerSubPlot()]
+    tertiary_data.graph_info.per_subplot_info[0].sub_plot_name = "Reconstructed Beam Form"
+    return [output], tertiary_data
 
 def t_go_thru_network(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
     tertiary_data.fundamentals["color_map"] = {
@@ -223,7 +293,7 @@ def t_go_thru_network(frame_list: List[NDArray[np.float64]], tertiary_data: Tert
     to_subtract_data = np.load("./transformed_data/none/5860Up-0-Nothing/2025_11_23_21_29_10_922989_0_0.npy")
     to_send_data = ((collapsed_data[0] + 1) / 2) - ((to_subtract_data + 1) /2)
     fresh_model = AutoEncoderSmall().cuda()
-    fresh_model.load_state_dict(torch.load("./models/small_autoencoder.pth"))
+    fresh_model.load_state_dict(torch.load("./models/coolsmall_autoencoder.pth"))
     fresh_model.eval()
     output = np.empty(((2, ) + (collapsed_data[0].shape[-1], )))
     output[0] = fresh_model(torch.from_numpy(to_send_data[0][0] + 0.5).float().cuda(non_blocking=True)).cpu().detach().numpy()
