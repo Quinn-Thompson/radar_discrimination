@@ -21,6 +21,7 @@ from typing import List
 from scipy.signal import butter, lfilter
 from gui_backend.sub_backend.networks import AutoEncoderSmall
 import torch
+from scipy.fft import ifft
 from sklearn.manifold import TSNE
 
 class RecreateChirp():
@@ -173,47 +174,39 @@ def t_sqrt_avg_difference(frame_list: List[NDArray[np.float64]], tertiary_data: 
     return [np.sqrt(np.abs(frame)) for frame in average_differential], tertiary_data
 
 
-def butter_lowpass(cutoff, fs, order=5):
-    b, a = butter(order, cutoff / (0.5 * fs), btype='low')
+def butter_bandpass(lowcut, highcut, fs, order=5):
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+    b, a = butter(order, [low, high], btype='band')
     return b, a
 
-def apply_lowpass(signal, cutoff, fs, order=5):
-    b, a = butter_lowpass(cutoff, fs, order)
+def apply_bandpass(signal, lowcut, highcut, fs, order=5):
+    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
     return lfilter(b, a, signal)
 
-
-
 def simulate_fmcw_return(tx_chirp, fs, target_range, attenuation=0.8):
-    c = 3e8
-    tau = 2 * target_range / c          # round-trip delay
-    delay_samples = int(round(tau * fs))  # sample delay
+    speed_of_light = 3e8
+    delay_time = 2 * target_range / speed_of_light
+    delay_samples = int(round(delay_time * fs))  # sample delay
     
-    # 1. Create delayed copy
     rx = np.zeros_like(tx_chirp)
     if delay_samples < len(tx_chirp):
         rx[delay_samples:] = tx_chirp[:-delay_samples] * attenuation
 
-    # 2. Mixing (TX × RX)
     mixed = tx_chirp * rx
+    time_signal = ifft(mixed)
+    bandpassed_signal = apply_bandpass(time_signal, 20e3, 500e3, fs, order=6)
 
-    # 3. LPF 500 kHz
-    mixed = apply_lowpass(mixed, 500e3, fs, order=6)
-
-    # 4. LPF 20 kHz
-    baseband = apply_lowpass(mixed, 20e3, fs, order=6)
-
-    return baseband
-
+    return bandpassed_signal
 def t_simulated_return(chirp_info_list: List[CreateLine]):
     sample_durations = [len(chirp.num_samples) for chirp in chirp_info_list]
     radius_to_target = 7
-    speed_of_light = 3.0e8
     chirp_recreator = RecreateChirp(chirp_info_list, max(sample_durations))
-    fs = chirp_info_list[0].sampling_rate
-
     simulated = []
+    
     for tx_chirp in chirp_recreator.recreate_single_chirp():
-        out = simulate_fmcw_return(tx_chirp, fs, radius_to_target)
+        out = simulate_fmcw_return(tx_chirp, chirp_info_list[0].sampling_rate, radius_to_target)
         simulated.append(out)
     return simulated
 # for chirp in chirp_recreator:
