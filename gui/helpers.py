@@ -29,11 +29,22 @@ _RECEIVER_COUNT = 3
 
 _NO_METHOD = "none"
 
-background_color = "#1A1A1A"
-hover_color = "#4A4A4A"
-clicked_color = "#8A8A8A"
-border_color = "#5A5A5A"
 
+
+dark_background_color = "#1A1A1A"
+dark_hover_color = "#4A4A4A"
+dark_clicked_color = "#8A8A8A"
+dark_border_color = "#5A5A5A"
+
+light_background_color = "#FFFFFF"
+light_hover_color = "#E4E4E4"
+light_clicked_color = "#8A8A8A"
+light_border_color = "#000000"
+
+background_color = light_background_color
+hover_color = light_hover_color
+clicked_color = light_clicked_color
+border_color = light_border_color
 
 global_budget_window_style = (
     f"background-color: {background_color};"
@@ -68,7 +79,6 @@ class Label:
     def __str__(self) -> str:
         return f"{self.name} {self.units}"
 
-@dataclass
 class PerSubPlot:
     def __init__(self):
         self.sub_plot_name: str = "Receiver"
@@ -99,10 +109,12 @@ class LoadType(Enum):
 class Models(Enum):
     SMALLAUTOENCODER = "Small Auto Encoder"
     AUTOENCODER = "Auto Encoder"
+    CLASSIFIER = "Classifier"
 
 class LossType(Enum):
     MSE = "MSE"
     MAE = "MAE"
+    CEL = "CEL"
 
 class DraggableLabel(QtWidgets.QLabel):
     def mouseMoveEvent(self, event: QDragMoveEvent):

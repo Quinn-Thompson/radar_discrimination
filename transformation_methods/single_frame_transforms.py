@@ -16,10 +16,10 @@ color meshes should be able to handle 3 axis and 2 axis data.
 import numpy as np
 from numpy.typing import NDArray
 from scipy import signal
-from gui_backend.helpers import CreateLine, TertiaryData, Label
+from gui_backend.helpers import CreateLine, TertiaryData, Label, PerSubPlot
 from typing import List
 from scipy.signal import butter, lfilter
-from gui_backend.sub_backend.networks import SmallAutoEncoder
+from gui_backend.sub_backend.networks import AutoEncoderSmall
 import torch
 from sklearn.manifold import TSNE
 
@@ -122,6 +122,27 @@ def t_beam_form(frame_list: List[NDArray[np.float64]]):
     averaged = [np.mean(frame, axis=0,keepdims=True) for frame in frame_list]
     return averaged
 
+def t_view_same_plot(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
+    tertiary_data.fundamentals["color_map"] = {
+        "Receiver 0": (255, 0, 0),
+        "Receiver 1": (0, 255, 0),
+        "Receiver 2": (0, 0, 255),
+    }
+    tertiary_data.fundamentals["color_list"] = [color for color in tertiary_data.fundamentals["color_map"].values()]
+    sub_plot_info = PerSubPlot()
+    sub_plot_info.sub_plot_name = "Signal Return per Receiver"
+    tertiary_data.graph_info.per_subplot_info = [sub_plot_info]
+
+    averaged = [np.mean(frame, axis=1) for frame in frame_list]
+    return averaged, tertiary_data
+
+def t_view_difference_same_plot(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
+    same_plot, new_teriary_data = t_view_same_plot(frame_list, tertiary_data)
+    to_subtract_data = np.load("./transformed_data/receiver_data/5860Up-0-Nothing/2025_11_23_21_29_10_922989_0_0.npy")[:, 0]
+    to_send_data = same_plot - to_subtract_data
+    new_teriary_data.graph_info.per_subplot_info[0].sub_plot_name += " w/ Background Removed"
+    return to_send_data, new_teriary_data
+
 def t_view_text(chirp_info_list: List[CreateLine]):
     my_text = [["test11", "test12"], ["test21", "test22"]]
     return [np.array(my_text)]
@@ -183,7 +204,6 @@ def simulate_fmcw_return(tx_chirp, fs, target_range, attenuation=0.8):
 
     return baseband
 
-
 def t_simulated_return(chirp_info_list: List[CreateLine]):
     sample_durations = [len(chirp.num_samples) for chirp in chirp_info_list]
     radius_to_target = 7
@@ -200,28 +220,76 @@ def t_simulated_return(chirp_info_list: List[CreateLine]):
 #     if_signal = 2 * 
 
 def t_go_thru_network(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
-    collapsed_data = t_beam_form(frame_list)
-     
-    fresh_model = SmallAutoEncoder().cuda()
-    fresh_model.load_state_dict(torch.load("./models/best_small_autoencoder_2.pth"))
-    fresh_model.eval()
-    output = fresh_model(torch.from_numpy((collapsed_data[0][0][:16]+ 1) / 2).float().cuda(non_blocking=True))
+    tertiary_data.fundamentals["color_map"] = {
+        "Reconstructed": (255, 0, 0),
+        "Original": (0, 0, 255),
+    }
+    tertiary_data.fundamentals["color_list"] = [color for color in tertiary_data.fundamentals["color_map"].values()]
     
-    return [output.cpu().detach().numpy()]
+    collapsed_data = t_beam_form(frame_list)
+    to_subtract_data = np.load("./transformed_data/none/5860Up-0-Nothing/2025_11_23_21_29_10_922989_0_0.npy")
+    to_send_data = ((collapsed_data[0] + 1) / 2) - ((to_subtract_data + 1) /2)
+    fresh_model = AutoEncoderSmall().cuda()
+    fresh_model.load_state_dict(torch.load("./models/small_autoencoder.pth"))
+    fresh_model.eval()
+    output = np.empty(((2, ) + (collapsed_data[0].shape[-1], )))
+    output[0] = fresh_model(torch.from_numpy(to_send_data[0][0] + 0.5).float().cuda(non_blocking=True)).cpu().detach().numpy()
+    output[1] = to_send_data[:, 0] + 0.5
+    tertiary_data.graph_info.per_subplot_info = [PerSubPlot()]
+    tertiary_data.graph_info.per_subplot_info[0].sub_plot_name = "Reconstructed Beam Form"
+    return [output], tertiary_data
+
+def t_subbed(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
+    collapsed_data = t_beam_form([np.concatenate([frame for frame in frame_list], axis=2)])
+    to_subtract_data = np.load("./transformed_data/none/5860Up-0-Nothing/2025_11_23_21_29_10_922989_0_0.npy")
+    to_send_data = ((collapsed_data[0] + 1) / 2) - ((to_subtract_data + 1) /2) + 0.5
+    return [to_send_data[0][:16]]
+
+def t_difference_encoder(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
+    tertiary_data.fundamentals["boundaries"] = (0.0, 1.0)
+    return [t_go_thru_network(frame_list, tertiary_data)[0] - t_subbed(frame_list, tertiary_data)[0]], tertiary_data
+
+def t_reduced_output(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
+    collapsed_data = t_beam_form([np.concatenate([frame for frame in frame_list], axis=2)])
+    to_subtract_data = np.load("./transformed_data/none/5860Up-0-Nothing/2025_11_23_21_29_10_922989_0_0.npy")
+    to_send_data = ((collapsed_data[0] + 1) / 2) - ((to_subtract_data + 1) /2)
+    fresh_model = AutoEncoderSmall().cuda()
+    fresh_model.load_state_dict(torch.load("./models/large_autoencoder.pth"))
+    fresh_model.eval()
+    output = []
+    
+    fresh_model.reduce_latent_space = -1
+    zero_output = fresh_model(torch.from_numpy(to_send_data[0][:16] + 0.5).float().cuda(non_blocking=True))
+    
+    for dimension in range(16):
+        fresh_model.reduce_latent_space = dimension
+        model_output = fresh_model(torch.from_numpy(to_send_data[0][:16] + 0.5).float().cuda(non_blocking=True)) - zero_output
+        output.append(model_output.cpu().detach().numpy()[None])
+    tertiary_data.fundamentals["boundaries"] = (0.0, 1.0)
+    return output, tertiary_data
 
 def t_reduced_dim(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
     collapsed_data = t_beam_form([np.concatenate([frame for frame in frame_list], axis=2)])
-    
-    fresh_model = SmallAutoEncoder().cuda()
-    fresh_model.load_state_dict(torch.load("./models/best_small_autoencoder_2.pth"))
+    to_subtract_data = np.load("./transformed_data/none/5860Up-0-Nothing/2025_11_23_21_29_10_922989_0_0.npy")
+    to_send_data = ((collapsed_data[0] + 1) / 2) - ((to_subtract_data + 1) /2)
+    fresh_model = AutoEncoderSmall().cuda()
+    fresh_model.load_state_dict(torch.load("./models/large_autoencoder.pth"))
     fresh_model.eval()
-    _ = fresh_model(torch.from_numpy((collapsed_data[0][0][:16]+ 1) / 2).float().cuda(non_blocking=True))
+    _ = fresh_model(torch.from_numpy(to_send_data[0][:128] + 0.5).float().cuda(non_blocking=True))
     
-    return [fresh_model.reduced_dimensions.output.cpu().detach().numpy()]
+    return [fresh_model.latent_space.cpu().detach().numpy()[None]]
 
-tsne = TSNE(n_components=2, verbose=1, perplexity=30, n_iter=300)
- 
-def t_sne_reduced_dim(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
-    reduced_dim = t_reduced_dim(frame_list, tertiary_data)
-    tsne_results = tsne.fit_transform(reduced_dim[0])
-    return [tsne_results]
+def t_accuracy(frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
+    tertiary_data.fundamentals["color_map"] = {
+        "Training": (255, 0, 0),
+        "Validation": (0, 0, 255),
+    }
+    tertiary_data.fundamentals["color_list"] = [color for color in tertiary_data.fundamentals["color_map"].values()]
+    tertiary_data.graph_info.per_subplot_info = [PerSubPlot()]
+    tertiary_data.graph_info.per_subplot_info[0].sub_plot_name = "Accuracy Per Epoch"
+    tertiary_data.graph_info.per_subplot_info[0].x_axis_label = Label(name="Epoch(s)", units=None)
+    tertiary_data.graph_info.y_axis_label = None
+    tertiary_data.graph_info.z_axis_label = Label(name="Accuracy", units=None)
+    tertiary_data.graph_info.tab_names = ["Accuracy"]
+    accuracy = np.mean(np.argmax(frame_list[1], axis=-1) == np.argmax(frame_list[2], axis=-1), axis=1)
+    return [accuracy], tertiary_data

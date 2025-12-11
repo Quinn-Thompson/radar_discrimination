@@ -13,13 +13,13 @@ class RenderWindowControlWidgets(WindowWidgets):
     def __init__(self) -> None:
         """Initialize each widget within the window."""
         
-        self.next_button = QtWidgets.QPushButton("Next Frame")
-        self.prev_button = QtWidgets.QPushButton("Previous Frame")
-        self.next_session = QtWidgets.QPushButton("Next Capture Session")
-        self.prev_session = QtWidgets.QPushButton("Previous Capture Session")
-        self.replay_button = QtWidgets.QPushButton("Replay Session")
-        self.play_button = QtWidgets.QPushButton("Play Session From Index")
-        self.pause_button = QtWidgets.QPushButton("Pause")
+        self.next_button = QtWidgets.QPushButton(">")
+        self.prev_button = QtWidgets.QPushButton("<")
+        self.next_session = QtWidgets.QPushButton("⏭")
+        self.prev_session = QtWidgets.QPushButton("⏮")
+        self.replay_button = QtWidgets.QPushButton("↺")
+        self.play_button = QtWidgets.QPushButton("▶")
+        self.pause_button = QtWidgets.QPushButton("⏸")
         self.playback_speed = LineEditWithText("Playback Speed")
         self.which_session = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.which_data = LineEditWithText("Frame Index")
@@ -38,16 +38,18 @@ class RenderWindowControl(QtWidgets.QFrame):
         self.frame_layout = QtWidgets.QHBoxLayout()
         self.play_session_layout = QtWidgets.QHBoxLayout()
         self.widgets = RenderWindowControlWidgets()
+        
+        self.setMaximumWidth(200)
 
         self.setLayout(self.main_layout)
-        self.session_layout.addWidget(self.widgets.next_session, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.session_layout.addWidget(self.widgets.prev_session, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.session_layout.addWidget(self.widgets.next_session, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addLayout(self.session_layout)
         
         self.main_layout.addWidget(self.widgets.which_session, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         
-        self.frame_layout.addWidget(self.widgets.next_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.frame_layout.addWidget(self.widgets.prev_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.frame_layout.addWidget(self.widgets.next_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addLayout(self.frame_layout)
 
         self.main_layout.addWidget(self.widgets.array_title, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)

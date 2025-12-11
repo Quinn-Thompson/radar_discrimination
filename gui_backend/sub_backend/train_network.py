@@ -15,22 +15,25 @@ import os
 from typing import Callable, Dict
 from random import sample
 from torch.autograd import Variable
-from gui_backend.sub_backend.networks import AutoEncoder, Network, SmallAutoEncoder
+from gui_backend.sub_backend.networks import AutoEncoder, Network, AutoEncoderSmall, Classifier
 import time
 import multiprocessing as mp
 from dataclasses import dataclass
 from enum import Enum
 from queue import Empty
+import random
 
 
 model_lookup: Dict[str, Network] = {
     Models.AUTOENCODER.name: AutoEncoder,
-    Models.SMALLAUTOENCODER.name: SmallAutoEncoder
+    Models.SMALLAUTOENCODER.name: AutoEncoderSmall,
+    Models.CLASSIFIER.name: Classifier,
 }
 
 loss_lookup = {
     LossType.MSE.name: torch.nn.MSELoss(),
     LossType.MAE.name: torch.nn.L1Loss(),
+    LossType.CEL.name: torch.nn.CrossEntropyLoss(),
 }
 
 @dataclass
@@ -42,15 +45,35 @@ class DataEventsToHandle(Enum):
     RUN_MODEL = "RUN_MODEL"
     STOP_MODEL = "STOP_MODEL"
 
+label_map = {
+    "5860Up-0-CornerBlanket": 0,
+    "5860Up-0-FlatBlanket": 0,
+    "5860Up-0-CornerCard": 1,
+    "5860Up-0-FlatCard": 1,
+    "5860Up-0-CornerFoil": 2,
+    "5860Up-0-FlatFoil": 2,
+    "5860Up-0-CornerWood": 3,
+    "5860Up-0-FlatWood": 3,
+    "5860Up-0-Disk": 2,
+    "5860Up-0-Grill": 2,
+    "5860Up-0-Oscope": 2,
+    "5860Up-0-Foam": 4,
+    "5860Up-0-Nothing": 5,   
+}
+
 class Dataset(torch.utils.data.Dataset):
     """
     initialization of the labels 
     """
-    def __init__(self, data_path: Path, label_path: Path, file_list: List[str], num_labels):
+    def __init__(self, data_path: Path, file_list: List[str], label_path: Optional[Path] = None, noise_path: Optional[Path] = None, label_map: Optional[Dict[str, int]] = None):
         self._data_path = data_path
         self._label_path = label_path
         self._file_list = file_list
-        # self._num_labels = num_labels
+        self._noise_path = noise_path
+        self._noise_contents = os.listdir(noise_path)
+        self._label_lookup = label_map
+        if self._label_lookup is not None:
+            self._num_labels = max(self._label_lookup.values()) + 1
 
     """
     gets the length of the folder
@@ -64,15 +87,33 @@ class Dataset(torch.utils.data.Dataset):
     def __getitem__(self, index: int):
         # Select sample
         file = self._file_list[index]
+        if self._noise_path is not None:
+            with open(f"{self._noise_path}/{random.choice(self._noise_contents)}", "rb") as fd:
+                noise = (np.load(fd) + 1) / 2
+        
         # load the input_data
         with open(f"{self._data_path}/{file}", "rb") as fd:
             input_data = (np.load(fd) + 1) / 2
-        # load the label
-        with open(f"{self._label_path}/{file}", "rb") as fd:
-            label_data = (np.load(fd) + 1) / 2
+            
+        if self._noise_path is not None:
+            input_data = (input_data - noise) + 0.5
+            
+        if self._label_path is not None:
+            # load the label
+            with open(f"{self._label_path}/{file}", "rb") as fd:
+                label_data = (np.load(fd) + 1) / 2
+        else:
+            label_data = input_data
 
-        output_label = torch.tensor(label_data)
-        return input_data, output_label
+
+        if not self._label_lookup or self._label_path is not None:
+            output_label = torch.tensor(label_data)
+            return input_data, output_label
+        else:
+            label = os.path.normpath(file).split(os.sep)[0]
+            output = torch.nn.functional.one_hot(torch.tensor(self._label_lookup[label], dtype=torch.long), num_classes=self._num_labels)
+            return input_data, output
+            
 
 class TrainBackend(QtCore.QObject):
     """The backend operations for the capturing window."""
@@ -106,6 +147,7 @@ class TrainBackend(QtCore.QObject):
         
         self.sub_window.network_info.widgets.data_file_explorer.clicked.connect(self.find_data_location)
         self.sub_window.network_info.widgets.label_file_explorer.clicked.connect(self.find_label_location)
+        self.sub_window.network_info.widgets.noise_file_explorer.clicked.connect(self.find_noise_location)
         self.sub_window.network_info.widgets.run_button.clicked.connect(self.start_nn)
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.check_for_nn_data)
@@ -128,6 +170,16 @@ class TrainBackend(QtCore.QObject):
         )
         self.sub_window.network_info.widgets.label_location.setInnerText(folder)
         
+    def find_noise_location(self):
+        """Use the file explorer to determine where to load the data from."""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self.main_window, 
+            "Select Folder", 
+            "" 
+        )
+        self.sub_window.network_info.widgets.noise_location.setInnerText(folder)
+        
+        
     def check_for_nn_data(self):
         try:
             passback_data: PassbackData = self.passback_queue.get_nowait()
@@ -140,6 +192,9 @@ class TrainBackend(QtCore.QObject):
 
         data_path = self.sub_window.network_info.widgets.data_location.getInnerText()
         label_path = self.sub_window.network_info.widgets.label_location.getInnerText()
+        noise_path = self.sub_window.network_info.widgets.noise_location.getInnerText()
+        if not noise_path:
+            noise_path = None
         train_val_split = int(self.sub_window.network_info.widgets.train_val_split.getInnerText())
         model = self.sub_window.network_info.widgets.model_selection.getInnerText()
         learning_rate = float(self.sub_window.network_info.widgets.learning_rate.getInnerText())
@@ -148,7 +203,7 @@ class TrainBackend(QtCore.QObject):
         epoch_count = int(self.sub_window.network_info.widgets.epoch_count.getInnerText())
         loss_type = self.sub_window.network_info.widgets.loss_type.getInnerText()
         pass_in_data = PassInData(
-            data_path, label_path, train_val_split, batch_size, learning_rate, model, time_between_draws, epoch_count, loss_type
+            data_path, label_path, noise_path, train_val_split, batch_size, learning_rate, model, time_between_draws, epoch_count, loss_type
         )
         
         self.pass_in_queue.put(pass_in_data)
@@ -164,6 +219,7 @@ class TrainBackend(QtCore.QObject):
 class PassInData:
     data_path: str
     label_path: str
+    noise_path: str
     train_val_split: int
     batch_size: int
     learning_rate: float
@@ -208,8 +264,12 @@ class TrainNetworks():
             print(torch.cuda.get_device_name(0))
 
         files = []
-
+        labels = []
         for dirpath, dirnames, filenames in os.walk(self.pass_in_data.data_path):
+            if self.pass_in_data.model == Models.CLASSIFIER.name and dirnames:
+                for dir_name in dirnames:
+                    labels.append(dir_name)
+                    
             for file_name in filenames:
                 relative_directory = os.path.relpath(dirpath, self.pass_in_data.data_path)
                 relative_path = os.path.join(relative_directory, file_name)
@@ -224,10 +284,10 @@ class TrainNetworks():
         validation_files=file_array_shuffle[int(len(file_array_shuffle)*self.pass_in_data.train_val_split*0.01):]
         
         dataset_train = Dataset(
-            self.pass_in_data.data_path, self.pass_in_data.label_path, training_files, len(training_files)
+            self.pass_in_data.data_path, training_files, noise_path=self.pass_in_data.noise_path, label_map=None
         )
         dataset_val = Dataset(
-            self.pass_in_data.data_path, self.pass_in_data.label_path, validation_files, len(validation_files)
+            self.pass_in_data.data_path, validation_files, noise_path=self.pass_in_data.noise_path, label_map=None
         )
 
         dataloader_train = torch.utils.data.DataLoader(dataset_train, batch_size=self.pass_in_data.batch_size, shuffle=True, num_workers=4, pin_memory=True)
@@ -274,24 +334,35 @@ class TrainNetworks():
             # BEGIN TRAINING   #
             ####################
             model_cuda.train()
-            self.train_network(dataloader_train, model_cuda, optimizer=optimizer)
+            _, t_input_data_batch, t_output_data_batch, t_output_label_batch = self.train_network(dataloader_train, model_cuda, optimizer=optimizer)
         
             # enact validation
             model_cuda.eval()
             # no gradiant activation
             with torch.no_grad():
-                validation_loss, input_data_batch, output_label_batch = self.train_network(dataloader_val, model_cuda)
+                validation_loss, v_input_data_batch, v_output_data_batch, v_output_label_batch = self.train_network(dataloader_val, model_cuda)
             
+            input_data_batch = torch.empty(((2,) + v_input_data_batch.shape))
+            input_data_batch[0] = t_input_data_batch
+            input_data_batch[1] = v_input_data_batch
+            output_data_batch = torch.empty(((2,) + v_output_data_batch.shape))
+            output_data_batch[0] = t_output_data_batch
+            output_data_batch[1] = v_output_data_batch
+            output_label_batch = torch.empty(((2,) + v_output_label_batch.shape))
+            output_label_batch[0] = t_output_label_batch
+            output_label_batch[1] = v_output_label_batch
+            
+            self.draw_to_screen(model_cuda, 0.0, input_data_batch, output_data_batch, output_label_batch)
             # if this is the new lowest validation loss
             if validation_loss < lowest_val_loss:
                 print(f'new minimum at epoch {epoch}, saved')
                 # save the network to hard drive
-                torch.save(model_cuda.state_dict(), "./models/best_small_autoencoder.pth")
-                fresh_model = SmallAutoEncoder().cuda()
-                fresh_model.load_state_dict(torch.load("./models/best_small_autoencoder.pth"))
-                fresh_model.eval()
-                output = fresh_model(input_data_batch.float().cuda(non_blocking=True))
-                print(torch.max(torch.abs(output - output_label_batch)))
+                torch.save(model_cuda.state_dict(), f"./models/{model_cuda}.pth")
+                # fresh_model = model_lookup[self.pass_in_data.model]().cuda()
+                # fresh_model.load_state_dict(torch.load(f"./models/{model_cuda}.pth"))
+                # fresh_model.eval()
+                # output = fresh_model(input_data_batch.float().cuda(non_blocking=True))
+                # print(torch.max(torch.abs(output - output_label_batch)))
 
         
     def train_network(self, dataloader: Dataset, model_cuda: Network, optimizer = None):
@@ -302,7 +373,8 @@ class TrainNetworks():
         for data_index, (input_data_batch, output_label_batch) in enumerate(dataloader):
             # soemtimes loads in batch size of 16
             if input_data_batch.size()[0] == self.pass_in_data.batch_size:
-                last_input = input_data_batch    
+                last_input = input_data_batch
+                last_output = output_label_batch
                 # if there is an optimizer, IE we are training
                 if optimizer is not None:
                     optimizer.zero_grad()
@@ -312,11 +384,8 @@ class TrainNetworks():
                     # backwards propogation based on loss
                     loss.backward()
                     optimizer.step()
-
-                if self.draw_to_screen(model_cuda, previous_draw, input_data_batch, output_label_batch, nn_output_batch):
-                    previous_draw = time.time()
         
-        return loss, last_input, nn_output_batch
+        return loss, last_input, last_output, nn_output_batch
 
     def draw_to_screen(
         self, 
@@ -331,17 +400,20 @@ class TrainNetworks():
         if current_time - previous_draw > self.pass_in_data.time_between_draws:
             self.draw_index += 1
             # re dimensionalize for drawing
-            input_values = input_data_batch[:16].cpu().detach().numpy()[None, ...]
-            known_values = output_label_batch[:16].cpu().detach().numpy()[None, ...]
-            guessed_values = nn_output_batch[:16].cpu().detach().numpy()[None, ...]
+            input_values = input_data_batch.cpu().detach().numpy()
+            known_values = output_label_batch.cpu().detach().numpy()
+            
+            guessed_values = nn_output_batch.cpu().detach().numpy()
+            
             if f"epoch {self.current_epoch}" not in self.tertiary_data.notable_events:
                 self.tertiary_data.notable_events[f"epoch {self.current_epoch}"] = self.draw_index
             
             tab_names, pertinant_info = model_cuda.return_pertinent_information()
-            
-            self.tertiary_data.graph_info.tab_names.extend(tab_names)
             to_draw = [input_values, guessed_values, known_values]
-            to_draw.extend([info_gpu[:16].cpu().detach().numpy()[None, ...] for info_gpu in pertinant_info])
+            if tab_names is not None and pertinant_info is not None:
+                self.tertiary_data.graph_info.tab_names.extend(tab_names)
+                to_draw.extend([info_gpu.cpu().detach().numpy()[None, ...] for info_gpu in pertinant_info])
+            
             time_stamp_values = TimeStampData("data", current_time, to_draw)
             self.passback_queue.put(PassbackData(time_stamp_values, self.tertiary_data))
             return True

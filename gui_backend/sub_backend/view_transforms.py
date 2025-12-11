@@ -189,8 +189,8 @@ def handle_methods(
                 if len(data_list.frame_data[data_packet.tab_to_update]) > _ALLOWED_LENGTH:
                     data_list.frame_data[data_packet.tab_to_update].pop(0)
                     data_list.tertiary_data[data_packet.tab_to_update].pop(0)
-                data_list.frame_data[data_packet.tab_to_update].append(AllData(transformed_data, transformed_tertiary_data))
-                data_list.tertiary_data[data_packet.tab_to_update].append(AllData(transformed_data, transformed_tertiary_data))
+                data_list.frame_data[data_packet.tab_to_update].append(transformed_data)
+                data_list.tertiary_data[data_packet.tab_to_update].append(transformed_tertiary_data)
                 feature_method = getattr(modules[method_packet.module_info.module_name], method_packet.method_name)
                 transformed_data, transformed_tertiary_data = different_method_calls(
                     feature_method, data_list.frame_data[data_packet.tab_to_update], data_packet.chirp_info_list, data_list.tertiary_data[data_packet.tab_to_update]

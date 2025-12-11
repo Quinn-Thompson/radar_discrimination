@@ -2,20 +2,24 @@ import torch
 import torch.nn as nn
 from numpy.typing import NDArray
 import numpy as np
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from abc import abstractmethod
 
 class PerceptronLayer(nn.Module):
     def __init__(self, in_channels: int, out_channels: int):
         super().__init__()
         self.linear_layer = nn.Linear(in_channels, out_channels)
-        self.activate_layer = nn.ReLU()
+        # self.batch_norm = nn.BatchNorm1d(out_channels)
+        self.activate_layer = nn.LeakyReLU()
+        # self.drop_out = nn.Dropout(0.2)
+        
         self.output = None
 
     def forward(self, x, secondary_input=None):
         x = self.linear_layer(x)
+        # x = self.batch_norm(x)
         x = self.activate_layer(x)
-        self.output = x
+        # x = self.drop_out(x)
         return x
 
 
@@ -65,6 +69,7 @@ class ResConvBottleneckLayer(nn.Module):
 class Network(nn.Module):
     def __init__(self):
         super().__init__()
+        self.network: nn.Sequential = None
         
     @abstractmethod
     def __str__(self) -> str:
@@ -77,42 +82,112 @@ class Network(nn.Module):
     def return_pertinent_information(self) -> Tuple[List[str], torch.Tensor]:
         raise NotImplementedError
 
-class AutoEncoder(Network):
-    def __init__(self):
+
+class Encoder(Network):
+    def __init__(self, middle_layer: int):
         super().__init__()
-        self.reduced_dimensions = PerceptronLayer(256, 32)
+        self.reduced_dimensions = nn.Linear(256, middle_layer)
         
         self.network = nn.Sequential(
             PerceptronLayer(4096, 512),
             PerceptronLayer(512, 256),
             self.reduced_dimensions,
-            PerceptronLayer(32, 256),
+        )
+
+class Decoder(Network):
+    def __init__(self, middle_layer: int):
+        super().__init__()
+        
+        self.network = nn.Sequential(
+            PerceptronLayer(middle_layer, 256),
             PerceptronLayer(256, 512),
             nn.Linear(512, 4096)
         )
         
-    def __str__(self) -> str:
-        return "large_autoencoder"
-        
-    def return_pertinent_information(self) -> Tuple[List[str], torch.Tensor]:
-        return ["Reduced Dimensions"], [self.reduced_dimensions.output]
-    
-class SmallAutoEncoder(Network):
-    def __init__(self):
+class EncoderSmall(Network):
+    def __init__(self, middle_layer: int):
         super().__init__()
-        self.reduced_dimensions = PerceptronLayer(128, 8)
-        
+
         self.network = nn.Sequential(
             PerceptronLayer(1024, 256),
             PerceptronLayer(256, 128),
-            self.reduced_dimensions,
-            PerceptronLayer(8, 128),
-            PerceptronLayer(128, 256),
-            nn.Linear(256, 1024)
+            nn.Linear(128, middle_layer),
+            nn.LeakyReLU()
         )
+
+class DecoderSmall(Network):
+    def __init__(self, middle_layer: int):
+        super().__init__()
+        
+        self.network = nn.Sequential(
+            PerceptronLayer(middle_layer, 128),
+            PerceptronLayer(128, 256),
+            nn.Linear(256, 1024),
+        )
+
+
+class AutoEncoder(Network):
+    def __init__(self, reduce_latent_space: Optional[List[int]] = None):
+        super().__init__()
+        self.reduce_latent_space = reduce_latent_space
+        self.encoder = Encoder(32)
+        self.decoder = Decoder(32)
+        self.latent_space = None
+        
+    def __str__(self) -> str:
+        return "large_autoencoder"
+        
+    def forward(self, network_input: torch.Tensor):
+        self.latent_space = self.encoder(network_input)
+        
+        if self.reduce_latent_space is not None:
+            self.latent_space[self.reduce_latent_space] = 0
+        
+        output = self.encoder(self.latent_space)
+        return output
+        
+    def return_pertinent_information(self) -> Tuple[List[str], torch.Tensor]:
+        return ["Reduced Dimensions"], [self.latent_space]
+    
+class AutoEncoderSmall(Network):
+    def __init__(self, reduce_latent_space: Optional[int] = None):
+        super().__init__()
+        self.reduce_latent_space = reduce_latent_space
+        self.encoder = EncoderSmall(16)
+        self.decoder = DecoderSmall(16)
+        self.latent_space = None
         
     def __str__(self) -> str:
         return "small_autoencoder"
         
+    def forward(self, network_input: torch.Tensor):
+        self.latent_space = self.encoder(network_input)
+        
+        if self.reduce_latent_space is not None:
+            mask = torch.zeros_like(self.latent_space)
+            if self.reduce_latent_space != -1:
+                mask[:, self.reduce_latent_space] = 1.0
+            self.latent_space = self.latent_space * mask
+        
+        output = self.decoder(self.latent_space)
+        return output
+        
     def return_pertinent_information(self) -> Tuple[List[str], torch.Tensor]:
-        return ["Reduced Dimensions"], [self.reduced_dimensions.output]
+        return ["Reduced Dimensions"], [self.latent_space]
+    
+    
+class Classifier(Network):
+    def __init__(self):
+        super().__init__()
+        self.network = nn.Sequential(
+            PerceptronLayer(1024, 256),
+            PerceptronLayer(256, 128),
+            PerceptronLayer(128, 64),
+            PerceptronLayer(64, 6),
+        )
+        
+    def __str__(self) -> str:
+        return "classifier"
+        
+    def return_pertinent_information(self) -> Tuple[List[str], torch.Tensor]:
+        return None, None

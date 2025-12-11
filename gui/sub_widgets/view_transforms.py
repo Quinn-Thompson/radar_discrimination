@@ -3,20 +3,22 @@ from PyQt6 import QtWidgets, QtGui
 from PyQt6 import QtCore
 from enum import Enum
 from gui.helpers import WindowWidgets
-from typing import List, Optional, Iterable, Union, NamedTuple, Dict
+from typing import List, Optional, Iterable, Union, NamedTuple, Dict, Tuple
 from functools import partial
 import pyqtgraph as pg
 from gui.helpers import _RECEIVER_COUNT, background_color, _HISTORY_TRANSFORMS_INFO, \
-_SINGLE_TRANSFORM_INFO, ComboBoxWithText, _NO_METHOD, TertiaryData
+_SINGLE_TRANSFORM_INFO, ComboBoxWithText, _NO_METHOD, TertiaryData, border_color,clicked_color
 from numpy.typing import NDArray
 import numpy as np
 import time
+from itertools import repeat, chain
 
 Boundaries = NamedTuple("Boundaries", [("minimum", float), ("maximum", float)])
 
 class GraphTypes(Enum):
     plot_2d = "Line Plots"
     colormesh = "Grid Plot"
+    scatterplot = "ScatterPlot"
 
 
 class ReceiverPlots(pg.GraphicsLayoutWidget):
@@ -28,14 +30,19 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
         pg.setConfigOption("foreground", "w")
         self.plots: List[pg.PlotItem] = []
         self.lines: List[pg.PlotDataItem] = [] 
+        self.label = None
         self.sub_plots: List[pg.ImageItem, List[pg.PlotCurveItem]] = []
         self.notable_events = {}
         self.graph_type: Optional[GraphTypes] = None
         self.current_boundaries = Boundaries(minimum=float("-inf"), maximum=float("inf"))
         self.ci.setMinimumHeight(400)
+        self.font_size = 20
+        self.graph_font = QtGui.QFont()
+        self.graph_font.setPointSize(20)  # affects label and units together
 
     def setup_plots(self, plot_count: int, tertiary_data: Optional[TertiaryData]):
         self.current_boundaries = Boundaries(minimum=float("-inf"), maximum=float("inf"))
+        self.setBackground(background_color)
         for receiver in range(plot_count):
 
             if receiver >= len(tertiary_data.graph_info.per_subplot_info):
@@ -46,18 +53,45 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
             # subplot.getViewBox().disableAutoRange(axis='y')
             self.plots.append(subplot)
             subplot.getViewBox().setBackgroundColor(background_color)
-            subplot.setTitle(plot_title, color="w", size="12pt")
+            subplot.setTitle(plot_title, color=border_color, size="22pt")
 
-            subplot.getAxis("bottom").setPen(pg.mkPen("w", width=2))
-            subplot.getAxis("left").setPen(pg.mkPen("w", width=2))
-            subplot.getAxis("bottom").setTextPen("w")
-            subplot.getAxis("left").setTextPen("w")
+            subplot.getAxis("bottom").setPen(pg.mkPen(border_color, width=2))
+            subplot.getAxis("left").setPen(pg.mkPen(border_color, width=2))
+            subplot.getAxis("bottom").setTextPen(border_color)
+            subplot.getAxis("left").setTextPen(border_color)
+            if self.graph_type == GraphTypes.plot_2d.value:
+                axis_line = pg.InfiniteLine(pos=0, angle=0, pen=pg.mkPen(clicked_color, width=1, style=QtCore.Qt.PenStyle.DashLine))
+                subplot.addItem(axis_line)
 
-            subplot.getViewBox().setBorder(pg.mkPen(color="w", width=2))
+            subplot.getViewBox().setBorder(pg.mkPen(color=border_color, width=2))
             self.lines.append(pg.PlotDataItem([], [], pen='r'))
             self.plots[receiver].addItem(self.lines[receiver])
 
             self.ci.nextCol()
+        self.ci.setContentsMargins(10, 10, 30, 30)
+        if self.graph_type == GraphTypes.plot_2d.value or self.graph_type == GraphTypes.scatterplot.value:
+            self.label = self.ci.addLabel("")
+        else:
+            cmap = pg.colormap.get('viridis')
+            self.label = pg.ColorBarItem(
+                values=(0, 1),
+                interactive=False,
+            )
+            self.label.setFixedWidth(50)
+            self.label.setColorMap(cmap)
+            axis = self.label.getAxis('right')
+            axis.setTextPen(border_color)
+            axis.setPen(pg.mkPen(border_color))
+            self.ci.addItem(self.label)
+    
+    def update_legend(self, color_map: Dict[str, Tuple[int, int, int]]):
+        text = ""
+        for label, color in color_map.items():
+            text += (
+                f'<span style="font-size:{self.font_size}pt"; style="color:rgb({color[0]},{color[1]},{color[2]})">■</span> '
+                f'<span style="font-size:{self.font_size}pt"; style="color:{border_color}">{label}</span><br>'
+            )
+        self.label.setText(text)
     
     def text_array_to_qimage(self, transformed_data: NDArray[np.str_]):
         cell_size = 30
@@ -78,8 +112,8 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
     def update_plot(self, transformed_data: NDArray[np.float64], tertiary_data: TertiaryData):
         max_value = 0.0
         min_value = float("inf")
-
-        if self.graph_type == GraphTypes.plot_2d.value:
+            
+        if self.graph_type == GraphTypes.plot_2d.value and "boundaries" not in tertiary_data.fundamentals:
             data_max = np.max(transformed_data)
             data_min = np.min(transformed_data)
             if data_max > max_value:
@@ -95,6 +129,9 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
             ):
                 changed_boundaries = True
                 self.current_boundaries = Boundaries(min_value - (max_value * 0.3), max_value + (max_value * 0.3))
+        elif "boundaries" in tertiary_data.fundamentals:
+            changed_boundaries = True
+            self.current_boundaries = Boundaries(tertiary_data.fundamentals["boundaries"][0], tertiary_data.fundamentals["boundaries"][1])
             
         for receiver, (sub_plot, plot) in enumerate(zip(self.sub_plots, self.plots)):
             
@@ -107,6 +144,18 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
                     to_set_image = np.real(transformed_data[receiver])
                 sub_plot.setImage(to_set_image)
                 sub_plot.setRect(QtCore.QRectF(0, 0, 300, 300))
+                self.label.setLevels((np.min(transformed_data[receiver]), np.max(transformed_data[receiver])))
+                
+            elif self.graph_type == GraphTypes.scatterplot.value:
+                self.update_legend(tertiary_data.fundamentals["color_map"])
+                colors = list(chain.from_iterable(repeat(pg.mkBrush(color), transformed_data[receiver].shape[0] // len(tertiary_data.fundamentals["color_list"])) for color in tertiary_data.fundamentals["color_list"]))
+                sub_plot.setData(
+                    x=transformed_data[receiver][:, 0],
+                    y=transformed_data[receiver][:, 1],
+                    brush=colors,
+                    size=8,
+                    pen=None
+                )
 
             elif self.graph_type == GraphTypes.plot_2d.value:
                 # ymin, ymax = plot.getViewBox().viewRange()[1]
@@ -124,8 +173,11 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
                     raise TypeError("Line Plots do not support text formats.")
                 if changed_boundaries:
                         plot.setYRange(self.current_boundaries.minimum, self.current_boundaries.maximum)
+                if "color_map" in tertiary_data.fundamentals:
+                    self.update_legend(tertiary_data.fundamentals["color_map"])
                 for plot_index, line_plot in enumerate(sub_plot):
-                    # print(transformed_data.shape)
+                    if "color_list" in tertiary_data.fundamentals:
+                        line_plot.setPen(pg.mkPen(tertiary_data.fundamentals["color_list"][plot_index]))
                     if len(transformed_data.shape) == 3:
                         line_plot.setData(np.real(transformed_data[receiver][plot_index]))
                     elif len(transformed_data.shape) == 2:
@@ -156,7 +208,7 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
             plot_count = 1
         
         self.setup_plots(plot_count, tertiary_data)
-        if self.graph_type == GraphTypes.colormesh.value:
+        if self.graph_type == GraphTypes.colormesh.value or self.graph_type == GraphTypes.scatterplot.value:
             self.plots[0].setLabel(
                 "left", 
                 tertiary_data.graph_info.y_axis_label.name,
@@ -168,6 +220,7 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
                 tertiary_data.graph_info.z_axis_label.name,
                 units=tertiary_data.graph_info.z_axis_label.units
             )
+        self.plots[0].getAxis('left').label.setFont(self.graph_font)
         
         for receiver, plot in enumerate(self.plots):
             try:
@@ -182,14 +235,17 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
                     "Long Time", 
                     units="Bins(s)"
                 )  
+            plot.getAxis('bottom').label.setFont(self.graph_font)
             
             if self.graph_type == GraphTypes.colormesh.value:
                 image_item = pg.ImageItem()
                 plot.addItem(image_item)
-
+                cmap = pg.colormap.get('viridis')
+                image_item.setLookupTable(cmap.getLookupTable(0.0, 1.0, 256))
                 plot.setLabel('left', 'Amplitude', units='ADC')
+                self.label.setImageItem(image_item)
                 self.sub_plots.append(image_item)
-            else:
+            elif self.graph_type == GraphTypes.plot_2d.value:
                 if dummy_size > 1:
                     lines = []
                     for _ in range(dummy_transformed_data.shape[dummy_size-2]):
@@ -199,6 +255,12 @@ class ReceiverPlots(pg.GraphicsLayoutWidget):
                 else:
                     line_plot = plot.plot()
                     self.sub_plots.append([line_plot])
+            elif self.graph_type == GraphTypes.scatterplot.value:
+                if dummy_transformed_data.shape[-1] == 2:
+                    scatter = pg.ScatterPlotItem()
+                    plot.addItem(scatter)
+                    self.sub_plots.append(scatter)
+                    plot.addLegend()
                     
 
     
@@ -238,10 +300,8 @@ class AllChirpContainerWindow(QtWidgets.QFrame):
         self.chirp_tabs: List[SingleChirpViewWindow] = []
         self.chirp_tabs_bar = QtWidgets.QTabWidget()
         self.matplotlib_layout = QtWidgets.QGridLayout()
-        self.graph_layout = QtWidgets.QGridLayout()
-        self.method_layout = QtWidgets.QGridLayout()
+        self.method_layout = QtWidgets.QHBoxLayout()
         self.root_layoutV.addLayout(self.matplotlib_layout)
-        self.root_layoutV.addLayout(self.graph_layout)
         self.root_layoutV.addLayout(self.method_layout)
         self.root_layoutV.addWidget(self.chirp_tabs_bar)
         self.current_data = None
@@ -249,38 +309,30 @@ class AllChirpContainerWindow(QtWidgets.QFrame):
         self.graph_type = GraphTypes.plot_2d.value
         self.glyph_cache = glyph_cache
         
-        self.graph_layout.addWidget(
+        self.method_layout.addWidget(
             self.widgets.graph_type,
-            0, 
-            0,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
         
         self.method_layout.addWidget(
             self.widgets.method_dropdowns[_SINGLE_TRANSFORM_INFO],
-            0, 
-            0,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
         self.method_layout.addWidget(
             self.widgets.method_dropdowns[_HISTORY_TRANSFORMS_INFO],
-            0, 
-            1,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
         self.method_layout.addWidget(
             self.widgets.refresh,
-            0, 
-            2,
             alignment=QtCore.Qt.AlignmentFlag.AlignCenter
         )
-        
+        self.current_tertiary = TertiaryData()
         self.widgets.refresh.setText("Refresh")
     
     def showEvent(self, event):
         super().showEvent(event)
         if self.current_data is not None:
-            self.update_views(self.current_data, None)
+            self.update_views(self.current_data, self.current_tertiary)
     
     def add_new_views(self, view_count: int, tertiary_data: Optional[TertiaryData]):
         self.plots_set = False
@@ -299,6 +351,7 @@ class AllChirpContainerWindow(QtWidgets.QFrame):
                 self.chirp_tabs_bar.addTab(self.chirp_tabs[-1], tertiary_data.graph_info.tab_names[chirp_number])
     
     def setup_new_sub_plots(self, frame_list: List[NDArray[np.float64]], tertiary_data: TertiaryData):
+        self.current_tertiary = tertiary_data
         for chirp, frame in zip(self.chirp_tabs, frame_list):
             chirp.graph_widgets.graphs_change(frame, tertiary_data)
     
@@ -313,6 +366,7 @@ class AllChirpContainerWindow(QtWidgets.QFrame):
     
     def update_views(self, transformed_data: List[NDArray[np.float64]], tertiary_data: TertiaryData):
         self.current_data = transformed_data
+        self.current_tertiary = tertiary_data
         if self.isVisible():
             for chirp_index, chirp_tab in enumerate(self.chirp_tabs):
                 chirp_tab.graph_widgets.update_plot(transformed_data[chirp_index], tertiary_data)
@@ -352,19 +406,16 @@ class AddTab(QtWidgets.QTabWidget):
         self.setCurrentIndex(self.count() - 2) 
         self.root_layoutH.setContentsMargins(5, 0, 0, 0)
         self.root_layoutH.setSpacing(5)
-        print(f" before Tool button{time.time()}")
 
         tab_name = QtWidgets.QLabel(f"View {index}")
         close_button = QtWidgets.QToolButton()
         close_button.setText("X")
         close_button.clicked.connect(partial(self.close_tab, self.widget(index)))
-        print(f" after Tool button{time.time()}")
         self.root_layoutH.addWidget(tab_name)
         self.root_layoutH.addWidget(close_button)
-        print(f" after add widget{time.time()}")
+
 
         self.tabBar().setTabButton(index, QtWidgets.QTabBar.ButtonPosition.RightSide, close_button)
-        print(f" tab button{time.time()}")
 
         self.added_new_tab.emit(self.view_tabs[str(self._unique_tab_names)])
         print(time.time())
