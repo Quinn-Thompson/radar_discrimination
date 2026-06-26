@@ -1,0 +1,20 @@
+{
+    "frame_repetition_time_s":100.325e-3, 
+    "chirp_repetition_time_s":500e-6, 
+    "num_chirps":16,  
+    "tdm_mimo":false,  
+    "chirp": 
+    {
+        "chirp_type": "FmcwSequenceChirp",
+        "start_frequency_Hz":59e9,  
+        "end_frequency_Hz":61e9,  
+        "sample_rate_Hz":2e6,
+        "num_samples":128,
+        "rx_mask":7,
+        "tx_mask":1,
+        "tx_power_level":31,
+        "lp_cutoff_Hz":500000,
+        "hp_cutoff_Hz":80000,
+        "if_gain_dB":30 
+    }
+}

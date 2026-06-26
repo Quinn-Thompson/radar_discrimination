@@ -1,0 +1,9 @@
+{
+    "sequence": [
+        {
+            "num_repetitions": 0,
+            "repetition_time_s": 0.1,
+            "type": "loop"
+        }
+    ]
+}
